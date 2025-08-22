@@ -42,7 +42,7 @@ module.exports = {
         },
       },
       fontFamily: {
-        'creepster': ['Creepster', 'cursive'],
+        'creepster': ['Creepster', 'cursive', 'fantasy', 'serif'],
       },
       borderRadius: {
         lg: "var(--radius)",

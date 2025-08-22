@@ -274,7 +274,7 @@ export default function NightmarePage() {
             )}
 
             {/* Header */}
-            <div className="text-center mb-8 pt-8">
+            <div className="text-center mb-8 pt-16">
                 <div className="max-w-6xl mx-auto">
                     <div className="flex items-center justify-center mb-6">
                         <img 
