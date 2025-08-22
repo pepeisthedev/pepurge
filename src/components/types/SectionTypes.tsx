@@ -1,1 +1,1 @@
-export type SectionType = "landing" | "dex" | "mint" | "openPack" | "collection" | "eggs";
+export type SectionType = "landing" | "dex" | "mint" | "openPack" | "collection" | "eggs" | "killpepe" | "nightmare";

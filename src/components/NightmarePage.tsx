@@ -1,0 +1,607 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react"
+import { ethers } from "ethers"
+import { Button } from "./ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
+import { Input } from "./ui/input"
+import { Label } from "./ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { 
+    Skull, 
+    Sword, 
+    Shield, 
+    Heart, 
+    Eye, 
+    EyeOff, 
+    Clock, 
+    LogOut, 
+    Zap,
+    Target,
+    Ghost
+} from "lucide-react"
+import pepurgeAbi from "../assets/abis/pepurge.json"
+
+const pepurgeContractAddress = "0x30E5d5F758E1B2f25b941EC54FF27058A92BA5cb"
+
+interface PepurgeNFT {
+    tokenId: string
+    type: number
+    hp: number
+    maxHp: number
+    attack: number
+    defense: number
+    isHidden: boolean
+    lastActionTimestamp: number
+    canAct: boolean
+    timeUntilNextAction: string
+    imageUrl: string
+}
+
+export default function NightmarePage() {
+    const { open } = useAppKit()
+    const { isConnected, address } = useAppKitAccount()
+    const { walletProvider } = useAppKitProvider("eip155")
+
+    const [userPepurges, setUserPepurges] = useState<PepurgeNFT[]>([])
+    const [availableTargets, setAvailableTargets] = useState<string[]>([])
+    const [isLoading, setIsLoading] = useState<boolean>(false)
+    const [showActionModal, setShowActionModal] = useState<boolean>(false)
+    const [selectedPepurge, setSelectedPepurge] = useState<PepurgeNFT | null>(null)
+    const [actionType, setActionType] = useState<"attack" | "hide">("attack")
+    const [targetTokenId, setTargetTokenId] = useState<string>("")
+    const [isPerformingAction, setIsPerformingAction] = useState<boolean>(false)
+    const [showResultModal, setShowResultModal] = useState<boolean>(false)
+    const [actionResult, setActionResult] = useState<{
+        success: boolean
+        message: string
+        type: "attack" | "hide"
+        pepurgeTokenId?: string
+        targetTokenId?: string
+    } | null>(null)
+
+    // Function to truncate wallet address
+    const truncateAddress = (address: string) => {
+        return `${address.slice(0, 6)}...${address.slice(-4)}`
+    }
+
+    // Function to calculate time until next action (24 hour cooldown)
+    const calculateTimeUntilNextAction = (lastActionTimestamp: number): { canAct: boolean; timeUntilNextAction: string } => {
+        if (lastActionTimestamp === 0) {
+            return { canAct: true, timeUntilNextAction: "Ready" }
+        }
+
+        const now = Math.floor(Date.now() / 1000)
+        const timeSinceLastAction = now - lastActionTimestamp
+        const twentyFourHours = 24 * 60 * 60
+
+        if (timeSinceLastAction >= twentyFourHours) {
+            return { canAct: true, timeUntilNextAction: "Ready" }
+        }
+
+        const timeRemaining = twentyFourHours - timeSinceLastAction
+        const hours = Math.floor(timeRemaining / 3600)
+        const minutes = Math.floor((timeRemaining % 3600) / 60)
+
+        if (hours > 0) {
+            return { canAct: false, timeUntilNextAction: `${hours}h ${minutes}m` }
+        } else {
+            return { canAct: false, timeUntilNextAction: `${minutes}m` }
+        }
+    }
+
+    // Function to disconnect wallet
+    const handleDisconnect = () => {
+        open()
+    }
+
+    // Fetch user's Pepurges and available targets
+    useEffect(() => {
+        if (isConnected && address) {
+            fetchUserPepurges()
+            fetchAvailableTargets()
+        }
+    }, [isConnected, address])
+
+    const fetchUserPepurges = async () => {
+        try {
+            setIsLoading(true)
+            if (!walletProvider || !address) return
+
+            const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
+            const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
+            
+            const result = await contract.getOwnedPepurges(address)
+            const [tokenIds, types, hps, hiddenStatus, timestamps, attacks, defenses, maxHps] = result
+            
+            const pepurges: PepurgeNFT[] = []
+            
+            for (let i = 0; i < tokenIds.length; i++) {
+                const actionInfo = calculateTimeUntilNextAction(Number(timestamps[i]))
+                
+                pepurges.push({
+                    tokenId: tokenIds[i].toString(),
+                    type: Number(types[i]),
+                    hp: Number(hps[i]),
+                    maxHp: Number(maxHps[i]),
+                    attack: Number(attacks[i]),
+                    defense: Number(defenses[i]),
+                    isHidden: hiddenStatus[i],
+                    lastActionTimestamp: Number(timestamps[i]),
+                    canAct: actionInfo.canAct,
+                    timeUntilNextAction: actionInfo.timeUntilNextAction,
+                    imageUrl: `/pepes/${Number(types[i])}.avif`
+                })
+            }
+            
+            setUserPepurges(pepurges)
+        } catch (error) {
+            console.error("Error fetching user pepurges:", error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    const fetchAvailableTargets = async () => {
+        try {
+            if (!walletProvider) return
+
+            const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
+            const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
+            
+            const targets = await contract.aliveAndNotHiddenPepes()
+            setAvailableTargets(targets.map((id: any) => id.toString()))
+        } catch (error) {
+            console.error("Error fetching available targets:", error)
+        }
+    }
+
+    const handleAction = async () => {
+        if (!selectedPepurge || !walletProvider) return
+        if (actionType === "attack" && !targetTokenId) return
+        
+        try {
+            setIsPerformingAction(true)
+            const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
+            const signer = await ethersProvider.getSigner()
+            const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, signer)
+            
+            let tx
+            let resultMessage = ""
+            
+            if (actionType === "attack") {
+                tx = await contract.Attack(selectedPepurge.tokenId, targetTokenId)
+                resultMessage = "BLOOD SPILLED!"
+            } else {
+                tx = await contract.Hide(selectedPepurge.tokenId)
+                resultMessage = "VANISHED INTO SHADOWS!"
+            }
+            
+            await tx.wait()
+            
+            setActionResult({
+                success: true,
+                message: resultMessage,
+                type: actionType,
+                pepurgeTokenId: selectedPepurge.tokenId,
+                targetTokenId: targetTokenId
+            })
+            setShowResultModal(true)
+            
+            // Refresh data after action
+            await fetchUserPepurges()
+            await fetchAvailableTargets()
+            
+            setShowActionModal(false)
+            setTargetTokenId("")
+            setSelectedPepurge(null)
+        } catch (error: any) {
+            console.error("Action failed:", error)
+            
+            let errorMessage = "ACTION FAILED!"
+            if (error.reason) {
+                errorMessage = error.reason
+            } else if (error.message?.includes("insufficient funds")) {
+                errorMessage = "INSUFFICIENT FUNDS FOR RITUAL"
+            } else if (error.code === "ACTION_REJECTED") {
+                errorMessage = "RITUAL REJECTED"
+            }
+            
+            setActionResult({
+                success: false,
+                message: errorMessage,
+                type: actionType,
+                pepurgeTokenId: selectedPepurge.tokenId,
+                targetTokenId: targetTokenId
+            })
+            setShowResultModal(true)
+            setShowActionModal(false)
+            setTargetTokenId("")
+            setSelectedPepurge(null)
+        } finally {
+            setIsPerformingAction(false)
+        }
+    }
+
+    const openActionModal = (pepurge: PepurgeNFT, action: "attack" | "hide") => {
+        setSelectedPepurge(pepurge)
+        setActionType(action)
+        setShowActionModal(true)
+    }
+
+    if (!isConnected) {
+        return (
+            <div className="min-h-screen bg-[#b31c1e] flex items-center justify-center p-4 font-creepster">
+                <div className="text-center">
+                    <div className="mb-8">
+                        <img 
+                            src="/Pepurge_Text.png" 
+                            alt="Pepurge" 
+                            className="w-[60vw] max-w-4xl mx-auto mb-4 drop-shadow-2xl"
+                        />
+                    </div>
+                    <p className="text-2xl md:text-3xl text-black font-bold mb-8 opacity-90">
+                        ENTER THE DARKNESS
+                    </p>
+                    <Button 
+                        onClick={() => open()}
+                        className="bg-black text-[#b31c1e] hover:bg-gray-800 border-4 border-black text-2xl font-bold py-6 px-12 shadow-2xl transform hover:scale-105 transition-all"
+                    >
+                        SUMMON WALLET
+                    </Button>
+                </div>
+            </div>
+        )
+    }
+
+    return (
+        <div className="min-h-screen bg-[#b31c1e] p-4 relative font-creepster">
+            {/* Blood drip effect */}
+            <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-b from-red-900 to-transparent opacity-70"></div>
+            
+            {/* Wallet Indicator */}
+            {isConnected && address && (
+                <div className="absolute top-4 right-4 z-10">
+                    <Button
+                        onClick={handleDisconnect}
+                        className="bg-black text-[#b31c1e] hover:bg-gray-800 border-2 border-black px-4 py-2 text-sm"
+                    >
+                        <span className="mr-2">{truncateAddress(address)}</span>
+                        <LogOut className="w-4 h-4" />
+                    </Button>
+                </div>
+            )}
+
+            {/* Header */}
+            <div className="text-center mb-8 pt-8">
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex items-center justify-center mb-6">
+                        <img 
+                            src="/Pepurge_Text.png" 
+                            alt="Pepurge" 
+                            className="w-[60vw] max-w-3xl mx-auto drop-shadow-2xl"
+                        />
+                    </div>
+                    <p className="text-xl md:text-2xl text-black font-bold opacity-90">
+                        PURGE OR BE PURGED
+                    </p>
+                </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="max-w-7xl mx-auto">
+                {isLoading ? (
+                    <div className="text-center">
+                        <Skull className="w-16 h-16 mx-auto animate-spin text-black mb-4" />
+                        <div className="text-4xl font-bold text-black">SUMMONING CREATURES...</div>
+                    </div>
+                ) : userPepurges.length === 0 ? (
+                    <div className="text-center">
+                        <img 
+                            src="/C1.png" 
+                            alt="No Pepurge" 
+                            className="w-24 mx-auto mb-4"
+                        />
+                        <div className="text-4xl font-bold text-black mb-4">NO PEPURGE IN YOUR POSSESSION</div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="text-center mb-8">
+                            <p className="text-3xl font-bold text-black flex items-center justify-center">
+                                <Skull className="w-8 h-8 mr-3" />
+                                YOUR DARK ARMY ({userPepurges.length})
+                                <Skull className="w-8 h-8 ml-3" />
+                            </p>
+                        </div>
+                        
+                        {/* Pepurge Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                            {userPepurges.map((pepurge) => (
+                                <div
+                                    key={pepurge.tokenId}
+                                    className={`bg-black border-4 border-red-800 p-6 rounded-lg shadow-2xl transform hover:scale-105 transition-all duration-300 ${
+                                        pepurge.hp === 0 ? 'opacity-50 grayscale' : 'hover:border-red-400'
+                                    } ${pepurge.isHidden ? 'border-purple-600' : ''}`}
+                                >
+                                    <div className="aspect-square mb-4 overflow-hidden rounded-lg border-2 border-red-600">
+                                        <img 
+                                            src={pepurge.imageUrl}
+                                            alt={`Pepurge #${pepurge.tokenId}`}
+                                            className={`w-full h-full object-cover ${pepurge.isHidden ? 'opacity-50' : ''}`}
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = '/pepes/1.avif'
+                                            }}
+                                        />
+                                        {pepurge.isHidden && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-purple-900 bg-opacity-70">
+                                                <EyeOff className="w-12 h-12 text-purple-200" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="text-center space-y-3">
+                                        <div className="text-[#b31c1e] font-bold text-xl flex items-center justify-center">
+                                            <Skull className="w-5 h-5 mr-2" />
+                                            CREATURE #{pepurge.tokenId}
+                                        </div>
+
+                                        {/* Status */}
+                                        {pepurge.isHidden ? (
+                                            <div className="flex items-center justify-center space-x-2 bg-purple-900 py-2 px-4 rounded">
+                                                <EyeOff className="text-purple-300 w-5 h-5" />
+                                                <span className="text-purple-300 font-bold">HIDDEN</span>
+                                            </div>
+                                        ) : pepurge.hp === 0 ? (
+                                            <div className="flex items-center justify-center space-x-2 bg-gray-800 py-2 px-4 rounded">
+                                                <Skull className="text-gray-400 w-5 h-5" />
+                                                <span className="text-gray-400 font-bold">DEAD</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center justify-center space-x-2 bg-red-900 py-2 px-4 rounded">
+                                                <Eye className="text-red-300 w-5 h-5" />
+                                                <span className="text-red-300 font-bold">EXPOSED</span>
+                                            </div>
+                                        )}
+                                        
+                                        {/* Stats */}
+                                        <div className="grid grid-cols-3 gap-2 text-sm">
+                                            <div className="bg-red-900 p-2 rounded text-center">
+                                                <Heart className="w-4 h-4 mx-auto mb-1 text-red-400" />
+                                                <div className="text-red-200 font-bold">{pepurge.hp}/{pepurge.maxHp}</div>
+                                                <div className="text-red-400 text-xs">HP</div>
+                                            </div>
+                                            <div className="bg-orange-900 p-2 rounded text-center">
+                                                <Sword className="w-4 h-4 mx-auto mb-1 text-orange-400" />
+                                                <div className="text-orange-200 font-bold">{pepurge.attack}</div>
+                                                <div className="text-orange-400 text-xs">ATK</div>
+                                            </div>
+                                            <div className="bg-blue-900 p-2 rounded text-center">
+                                                <Shield className="w-4 h-4 mx-auto mb-1 text-blue-400" />
+                                                <div className="text-blue-200 font-bold">{pepurge.defense}</div>
+                                                <div className="text-blue-400 text-xs">DEF</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Cooldown */}
+                                        <div className="flex items-center justify-center space-x-2 bg-gray-900 py-2 px-4 rounded">
+                                            <Clock className={`w-4 h-4 ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`} />
+                                            <span className={`text-sm font-bold ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`}>
+                                                {pepurge.timeUntilNextAction}
+                                            </span>
+                                        </div>
+                                        
+                                        {/* Action Buttons */}
+                                        {pepurge.hp > 0 && pepurge.canAct && (
+                                            <div className="flex space-x-2 pt-2">
+                                                {!pepurge.isHidden && (
+                                                    <Button
+                                                        onClick={() => openActionModal(pepurge, "attack")}
+                                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 border-2 border-red-400 text-sm"
+                                                    >
+                                                        <Target className="w-4 h-4 mr-1" />
+                                                        ATTACK
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    onClick={() => openActionModal(pepurge, "hide")}
+                                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 border-2 border-purple-400 text-sm"
+                                                >
+                                                    <Ghost className="w-4 h-4 mr-1" />
+                                                    HIDE
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Action Modal */}
+            <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
+                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-3xl font-bold text-black text-center">
+                            {actionType === "attack" ? "🗡️ SPILL BLOOD" : "👻 FADE AWAY"}
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    {selectedPepurge && (
+                        <div className="space-y-6">
+                            {/* Selected Pepurge */}
+                            <div className="text-center">
+                                <div className="w-32 h-32 mx-auto mb-4 border-2 border-black rounded-lg overflow-hidden">
+                                    <img 
+                                        src={selectedPepurge.imageUrl}
+                                        alt={`Pepurge #${selectedPepurge.tokenId}`}
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+                                <div className="text-black font-bold text-xl">
+                                    CREATURE #{selectedPepurge.tokenId}
+                                </div>
+                                <div className="flex items-center justify-center space-x-4 mt-2 text-sm">
+                                    <div className="flex items-center space-x-1">
+                                        <Heart className="text-red-600 w-4 h-4" />
+                                        <span className="text-black font-bold">{selectedPepurge.hp}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <Sword className="text-orange-600 w-4 h-4" />
+                                        <span className="text-black font-bold">{selectedPepurge.attack}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <Shield className="text-blue-600 w-4 h-4" />
+                                        <span className="text-black font-bold">{selectedPepurge.defense}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Target Selection for Attack */}
+                            {actionType === "attack" && (
+                                <div className="space-y-2">
+                                    <Label className="text-black font-bold text-lg">
+                                        SELECT VICTIM:
+                                    </Label>
+                                    <Select value={targetTokenId} onValueChange={setTargetTokenId}>
+                                        <SelectTrigger className="bg-white border-2 border-black text-black font-bold">
+                                            <SelectValue placeholder="Choose your prey..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-white border-2 border-black">
+                                            {availableTargets.filter(id => id !== selectedPepurge.tokenId).map((tokenId) => (
+                                                <SelectItem key={tokenId} value={tokenId} className="text-black font-bold">
+                                                    Creature #{tokenId}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="flex space-x-4">
+                                <Button
+                                    onClick={() => setShowActionModal(false)}
+                                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 border-2 border-black"
+                                >
+                                    RETREAT
+                                </Button>
+                                <Button
+                                    onClick={handleAction}
+                                    disabled={(actionType === "attack" && !targetTokenId) || isPerformingAction}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 border-2 border-black disabled:opacity-50"
+                                >
+                                    {isPerformingAction ? (
+                                        <>
+                                            <Zap className="w-4 h-4 mr-2 animate-spin" />
+                                            CASTING...
+                                        </>
+                                    ) : actionType === "attack" ? (
+                                        <>
+                                            <Target className="w-4 h-4 mr-2" />
+                                            ATTACK
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Ghost className="w-4 h-4 mr-2" />
+                                            HIDE
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+
+                            {/* Rules */}
+                            <div className="bg-black border-2 border-red-800 p-4 rounded">
+                                <div className="text-[#b31c1e] text-sm space-y-1">
+                                    {actionType === "attack" ? (
+                                        <>
+                                            <p>• ATTACK EXPOSED CREATURES ONLY</p>
+                                            <p>• DEAL DAMAGE BASED ON YOUR ATTACK</p>
+                                            <p>• VICTIMS TAKE DAMAGE BASED ON DEFENSE</p>
+                                            <p>• KILL TO SURVIVE THE NIGHTMARE</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p>• 50% CHANCE TO HIDE SUCCESSFULLY</p>
+                                            <p>• HIDDEN CREATURES HEAL TO FULL HP</p>
+                                            <p>• HIDDEN CREATURES CANNOT BE ATTACKED</p>
+                                            <p>• ESCAPE THE NIGHTMARE TEMPORARILY</p>
+                                        </>
+                                    )}
+                                    <p>• ONE ACTION PER DAY PER CREATURE</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Result Modal */}
+            <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
+                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className={`text-3xl font-bold text-center ${
+                            actionResult?.success ? 'text-black' : 'text-red-900'
+                        }`}>
+                            {actionResult?.success ? '🩸 SUCCESS! 🩸' : '💀 FAILED! 💀'}
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    {actionResult && (
+                        <div className="space-y-6 text-center">
+                            <div className="text-black font-bold text-lg">
+                                {actionResult.message}
+                            </div>
+                            
+                            {actionResult.success ? (
+                                <div className="space-y-3">
+                                    <div className="text-black font-bold">
+                                        {actionResult.type === "attack" 
+                                            ? `Creature #${actionResult.pepurgeTokenId} attacked Creature #${actionResult.targetTokenId}!`
+                                            : `Creature #${actionResult.pepurgeTokenId} attempted to hide!`
+                                        }
+                                    </div>
+                                    <div className="bg-black border-2 border-red-800 p-4 rounded">
+                                        <div className="text-[#b31c1e] text-sm space-y-1">
+                                            {actionResult.type === "attack" ? (
+                                                <>
+                                                    <p>🗡️ Damage dealt to victim!</p>
+                                                    <p>🩸 Blood has been spilled!</p>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <p>👻 Successfully vanished!</p>
+                                                    <p>❤️ Healing to full health!</p>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="text-black font-bold">
+                                        The ritual has failed...
+                                    </div>
+                                    <div className="bg-black border-2 border-red-800 p-4 rounded">
+                                        <div className="text-[#b31c1e] text-sm">
+                                            <p>The darkness rejected your offering. Try again when the stars align.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <Button
+                                onClick={() => setShowResultModal(false)}
+                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-bold py-3 border-2 border-black"
+                            >
+                                RETURN TO DARKNESS
+                            </Button>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+        </div>
+    )
+}
