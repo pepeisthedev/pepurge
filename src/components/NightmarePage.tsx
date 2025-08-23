@@ -232,7 +232,7 @@ export default function NightmarePage() {
 
     if (!isConnected) {
         return (
-            <div className="min-h-screen bg-[#b31c1e] flex items-center justify-center p-4 font-creepster">
+            <div className="min-h-screen bg-[#b31c1e] flex items-center justify-center p-4 font-nosifer">
                 <div className="text-center">
                     <div className="mb-8">
                         <img 
@@ -246,7 +246,7 @@ export default function NightmarePage() {
                     </p>
                     <Button 
                         onClick={() => open()}
-                        className="bg-black text-[#b31c1e] hover:bg-gray-800 border-4 border-black text-2xl font-bold py-6 px-12 shadow-2xl transform hover:scale-105 transition-all"
+                        className="bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-2xl font-bold py-6 px-12 shadow-2xl transform hover:scale-105 transition-all"
                     >
                         SUMMON WALLET
                     </Button>
@@ -256,7 +256,7 @@ export default function NightmarePage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#b31c1e] p-4 relative font-creepster">
+        <div className="min-h-screen bg-[#b31c1e] p-4 relative font-nosifer">
             {/* Blood drip effect */}
             <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-b from-red-900 to-transparent opacity-70"></div>
             
@@ -265,7 +265,7 @@ export default function NightmarePage() {
                 <div className="absolute top-4 right-4 z-10">
                     <Button
                         onClick={handleDisconnect}
-                        className="bg-black text-[#b31c1e] hover:bg-gray-800 border-2 border-black px-4 py-2 text-sm"
+                        className="bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-2 border-black px-4 py-2 text-sm"
                     >
                         <span className="mr-2">{truncateAddress(address)}</span>
                         <LogOut className="w-4 h-4" />

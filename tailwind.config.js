@@ -43,6 +43,8 @@ module.exports = {
       },
       fontFamily: {
         'creepster': ['Creepster', 'cursive', 'fantasy', 'serif'],
+        'nosifer': ['Nosifer', 'cursive', 'fantasy', 'serif'],
+        'butcherman': ['Butcherman', 'cursive', 'fantasy', 'serif'],
       },
       borderRadius: {
         lg: "var(--radius)",
