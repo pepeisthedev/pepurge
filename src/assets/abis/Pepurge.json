@@ -334,6 +334,31 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "success",
+        "type": "bool"
+      }
+    ],
+    "name": "HideAttempt",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
         "type": "address"
@@ -499,7 +524,37 @@
     "outputs": [
       {
         "internalType": "uint256[]",
-        "name": "",
+        "name": "tokenIds",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "types",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "hps",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "timestamps",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "attacks",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "defenses",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "maxHps",
         "type": "uint256[]"
       }
     ],
@@ -996,6 +1051,11 @@
         "internalType": "uint256",
         "name": "_whenColl",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_collect",
+        "type": "uint256"
       }
     ],
     "name": "setting1",
@@ -1081,6 +1141,19 @@
         "internalType": "string",
         "name": "",
         "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalMinted",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

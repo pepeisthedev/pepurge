@@ -23,7 +23,7 @@ import {
 } from "lucide-react"
 import pepurgeAbi from "../assets/abis/pepurge.json"
 
-const pepurgeContractAddress = "0x30E5d5F758E1B2f25b941EC54FF27058A92BA5cb"
+const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 interface PepurgeNFT {
     tokenId: string
@@ -39,13 +39,24 @@ interface PepurgeNFT {
     imageUrl: string
 }
 
+interface TargetPepurge {
+    tokenId: string
+    type: number
+    hp: number
+    maxHp: number
+    attack: number
+    defense: number
+    lastActionTimestamp: number
+    imageUrl: string
+}
+
 export default function NightmarePage() {
     const { open } = useAppKit()
     const { isConnected, address } = useAppKitAccount()
     const { walletProvider } = useAppKitProvider("eip155")
 
     const [userPepurges, setUserPepurges] = useState<PepurgeNFT[]>([])
-    const [availableTargets, setAvailableTargets] = useState<string[]>([])
+    const [availableTargets, setAvailableTargets] = useState<TargetPepurge[]>([])
     const [isLoading, setIsLoading] = useState<boolean>(false)
     const [showActionModal, setShowActionModal] = useState<boolean>(false)
     const [selectedPepurge, setSelectedPepurge] = useState<PepurgeNFT | null>(null)
@@ -59,6 +70,7 @@ export default function NightmarePage() {
         type: "attack" | "hide"
         pepurgeTokenId?: string
         targetTokenId?: string
+        hideSucceeded?: boolean
     } | null>(null)
 
     // Function to truncate wallet address
@@ -100,9 +112,15 @@ export default function NightmarePage() {
     useEffect(() => {
         if (isConnected && address) {
             fetchUserPepurges()
-            fetchAvailableTargets()
         }
     }, [isConnected, address])
+
+    // Fetch available targets after user pepurges are loaded
+    useEffect(() => {
+        if (isConnected && address && walletProvider) {
+            fetchAvailableTargets()
+        }
+    }, [userPepurges, isConnected, address, walletProvider])
 
     const fetchUserPepurges = async () => {
         try {
@@ -131,7 +149,7 @@ export default function NightmarePage() {
                     lastActionTimestamp: Number(timestamps[i]),
                     canAct: actionInfo.canAct,
                     timeUntilNextAction: actionInfo.timeUntilNextAction,
-                    imageUrl: `/pepes/${Number(types[i])}.avif`
+                    imageUrl: `/pepes/${Number(types[i])}.png`
                 })
             }
             
@@ -150,8 +168,31 @@ export default function NightmarePage() {
             const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
             
-            const targets = await contract.aliveAndNotHiddenPepes()
-            setAvailableTargets(targets.map((id: any) => id.toString()))
+            const result = await contract.aliveAndNotHiddenPepes()
+            const [tokenIds, types, hps, timestamps, attacks, defenses, maxHps] = result
+
+            const targets: TargetPepurge[] = []
+            const userTokenIds = userPepurges.map(p => p.tokenId)
+            
+            for (let i = 0; i < tokenIds.length; i++) {
+                const tokenId = tokenIds[i].toString()
+                
+                // Filter out tokens owned by the current user
+                if (!userTokenIds.includes(tokenId)) {
+                    targets.push({
+                        tokenId: tokenId,
+                        type: Number(types[i]),
+                        hp: Number(hps[i]),
+                        maxHp: Number(maxHps[i]),
+                        attack: Number(attacks[i]),
+                        defense: Number(defenses[i]),
+                        lastActionTimestamp: Number(timestamps[i]),
+                        imageUrl: `/pepes/${Number(types[i])}.png`
+                    })
+                }
+            }
+            
+            setAvailableTargets(targets)
         } catch (error) {
             console.error("Error fetching available targets:", error)
         }
@@ -169,29 +210,54 @@ export default function NightmarePage() {
             
             let tx
             let resultMessage = ""
+            let hideSucceeded = false
             
             if (actionType === "attack") {
                 tx = await contract.Attack(selectedPepurge.tokenId, targetTokenId)
                 resultMessage = "BLOOD SPILLED!"
             } else {
                 tx = await contract.Hide(selectedPepurge.tokenId)
-                resultMessage = "VANISHED INTO SHADOWS!"
             }
             
-            await tx.wait()
+            const receipt = await tx.wait()
+            
+            // For hide action, parse the HideAttempt event to check if it succeeded
+            if (actionType === "hide") {
+                receipt.logs.forEach((log: any) => {
+                    try {
+                        const parsedLog = contract.interface.parseLog(log)
+                        if (parsedLog?.name === "HideAttempt") {
+                            const tokenId = Number(parsedLog.args[0])
+                            const sender = parsedLog.args[1]
+                            hideSucceeded = parsedLog.args[2] // The success boolean
+                            
+                            console.log("HideAttempt event:", {
+                                tokenId,
+                                sender,
+                                succeeded: hideSucceeded
+                            })
+                        }
+                    } catch (e) {
+                        console.log("Unparsed log:", log)
+                    }
+                })
+                
+                resultMessage = hideSucceeded ? "VANISHED INTO SHADOWS!" : "FAILED TO HIDE!"
+            }
             
             setActionResult({
                 success: true,
                 message: resultMessage,
                 type: actionType,
                 pepurgeTokenId: selectedPepurge.tokenId,
-                targetTokenId: targetTokenId
+                targetTokenId: targetTokenId,
+                hideSucceeded: actionType === "hide" ? hideSucceeded : undefined
             })
             setShowResultModal(true)
             
             // Refresh data after action
             await fetchUserPepurges()
-            await fetchAvailableTargets()
+            // fetchAvailableTargets will be called automatically via useEffect when userPepurges updates
             
             setShowActionModal(false)
             setTargetTokenId("")
@@ -241,12 +307,12 @@ export default function NightmarePage() {
                             className="w-[60vw] max-w-4xl mx-auto mb-4 drop-shadow-2xl"
                         />
                     </div>
-                    <p className="text-2xl md:text-3xl text-black font-bold mb-8 opacity-90">
+                    <p className="text-2xl md:text-3xl text-black font-nosifer mb-8 opacity-90">
                         ENTER THE DARKNESS
                     </p>
                     <Button 
                         onClick={() => open()}
-                        className="bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-2xl font-bold py-6 px-12 shadow-2xl transform hover:scale-105 transition-all"
+                        className="bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-2xl font-nosifer py-6 px-12 shadow-2xl transform hover:scale-105 transition-all"
                     >
                         SUMMON WALLET
                     </Button>
@@ -283,7 +349,7 @@ export default function NightmarePage() {
                             className="w-[60vw] max-w-3xl mx-auto drop-shadow-2xl"
                         />
                     </div>
-                    <p className="text-xl md:text-2xl text-black font-bold opacity-90">
+                    <p className="text-xl md:text-2xl text-black font-nosifer opacity-90">
                         PURGE OR BE PURGED
                     </p>
                 </div>
@@ -294,7 +360,7 @@ export default function NightmarePage() {
                 {isLoading ? (
                     <div className="text-center">
                         <Skull className="w-16 h-16 mx-auto animate-spin text-black mb-4" />
-                        <div className="text-4xl font-bold text-black">SUMMONING CREATURES...</div>
+                        <div className="text-4xl font-nosifer text-black">SUMMONING PEPURGES...</div>
                     </div>
                 ) : userPepurges.length === 0 ? (
                     <div className="text-center">
@@ -303,12 +369,12 @@ export default function NightmarePage() {
                             alt="No Pepurge" 
                             className="w-24 mx-auto mb-4"
                         />
-                        <div className="text-4xl font-bold text-black mb-4">NO PEPURGE IN YOUR POSSESSION</div>
+                        <div className="text-4xl font-nosifer text-black mb-4">NO PEPURGE IN YOUR POSSESSION</div>
                     </div>
                 ) : (
                     <>
                         <div className="text-center mb-8">
-                            <p className="text-3xl font-bold text-black flex items-center justify-center">
+                            <p className="text-3xl font-nosifer text-black flex items-center justify-center">
                                 <Skull className="w-8 h-8 mr-3" />
                                 YOUR DARK ARMY ({userPepurges.length})
                                 <Skull className="w-8 h-8 ml-3" />
@@ -320,7 +386,7 @@ export default function NightmarePage() {
                             {userPepurges.map((pepurge) => (
                                 <div
                                     key={pepurge.tokenId}
-                                    className={`bg-black border-4 border-red-800 p-6 rounded-lg shadow-2xl transform hover:scale-105 transition-all duration-300 ${
+                                    className={`bg-black border-4 border-red-800 p-6 rounded-lg shadow-2xl transform transition-all duration-300 ${
                                         pepurge.hp === 0 ? 'opacity-50 grayscale' : 'hover:border-red-400'
                                     } ${pepurge.isHidden ? 'border-purple-600' : ''}`}
                                 >
@@ -328,39 +394,33 @@ export default function NightmarePage() {
                                         <img 
                                             src={pepurge.imageUrl}
                                             alt={`Pepurge #${pepurge.tokenId}`}
-                                            className={`w-full h-full object-cover ${pepurge.isHidden ? 'opacity-50' : ''}`}
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = '/pepes/1.avif'
-                                            }}
+                                            className={`w-full h-full object-cover `}
+                                         
                                         />
-                                        {pepurge.isHidden && (
-                                            <div className="absolute inset-0 flex items-center justify-center bg-purple-900 bg-opacity-70">
-                                                <EyeOff className="w-12 h-12 text-purple-200" />
-                                            </div>
-                                        )}
+                                    
                                     </div>
                                     
                                     <div className="text-center space-y-3">
-                                        <div className="text-[#b31c1e] font-bold text-xl flex items-center justify-center">
+                                        <div className="text-[#b31c1e] font-nosifer text-xl flex items-center justify-center">
                                             <Skull className="w-5 h-5 mr-2" />
-                                            CREATURE #{pepurge.tokenId}
+                                            PEPURGE #{pepurge.tokenId}
                                         </div>
 
                                         {/* Status */}
                                         {pepurge.isHidden ? (
                                             <div className="flex items-center justify-center space-x-2 bg-purple-900 py-2 px-4 rounded">
                                                 <EyeOff className="text-purple-300 w-5 h-5" />
-                                                <span className="text-purple-300 font-bold">HIDDEN</span>
+                                                <span className="text-purple-300 font-nosifer">HIDDEN</span>
                                             </div>
                                         ) : pepurge.hp === 0 ? (
                                             <div className="flex items-center justify-center space-x-2 bg-gray-800 py-2 px-4 rounded">
                                                 <Skull className="text-gray-400 w-5 h-5" />
-                                                <span className="text-gray-400 font-bold">DEAD</span>
+                                                <span className="text-gray-400 font-nosifer">DEAD</span>
                                             </div>
                                         ) : (
                                             <div className="flex items-center justify-center space-x-2 bg-red-900 py-2 px-4 rounded">
                                                 <Eye className="text-red-300 w-5 h-5" />
-                                                <span className="text-red-300 font-bold">EXPOSED</span>
+                                                <span className="text-red-300 font-nosifer">EXPOSED</span>
                                             </div>
                                         )}
                                         
@@ -368,17 +428,17 @@ export default function NightmarePage() {
                                         <div className="grid grid-cols-3 gap-2 text-sm">
                                             <div className="bg-red-900 p-2 rounded text-center">
                                                 <Heart className="w-4 h-4 mx-auto mb-1 text-red-400" />
-                                                <div className="text-red-200 font-bold">{pepurge.hp}/{pepurge.maxHp}</div>
+                                                <div className="text-red-200 font-nosifer">{pepurge.hp}/{pepurge.maxHp}</div>
                                                 <div className="text-red-400 text-xs">HP</div>
                                             </div>
                                             <div className="bg-orange-900 p-2 rounded text-center">
                                                 <Sword className="w-4 h-4 mx-auto mb-1 text-orange-400" />
-                                                <div className="text-orange-200 font-bold">{pepurge.attack}</div>
+                                                <div className="text-orange-200 font-nosifer">{pepurge.attack}</div>
                                                 <div className="text-orange-400 text-xs">ATK</div>
                                             </div>
                                             <div className="bg-blue-900 p-2 rounded text-center">
                                                 <Shield className="w-4 h-4 mx-auto mb-1 text-blue-400" />
-                                                <div className="text-blue-200 font-bold">{pepurge.defense}</div>
+                                                <div className="text-blue-200 font-nosifer">{pepurge.defense}</div>
                                                 <div className="text-blue-400 text-xs">DEF</div>
                                             </div>
                                         </div>
@@ -386,7 +446,7 @@ export default function NightmarePage() {
                                         {/* Cooldown */}
                                         <div className="flex items-center justify-center space-x-2 bg-gray-900 py-2 px-4 rounded">
                                             <Clock className={`w-4 h-4 ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`} />
-                                            <span className={`text-sm font-bold ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`}>
+                                            <span className={`text-sm font-nosifer ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`}>
                                                 {pepurge.timeUntilNextAction}
                                             </span>
                                         </div>
@@ -397,7 +457,7 @@ export default function NightmarePage() {
                                                 {!pepurge.isHidden && (
                                                     <Button
                                                         onClick={() => openActionModal(pepurge, "attack")}
-                                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 border-2 border-red-400 text-sm"
+                                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-nosifer py-2 px-3 border-2 border-red-400 text-sm"
                                                     >
                                                         <Target className="w-4 h-4 mr-1" />
                                                         ATTACK
@@ -405,7 +465,7 @@ export default function NightmarePage() {
                                                 )}
                                                 <Button
                                                     onClick={() => openActionModal(pepurge, "hide")}
-                                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 border-2 border-purple-400 text-sm"
+                                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-nosifer py-2 px-3 border-2 border-purple-400 text-sm"
                                                 >
                                                     <Ghost className="w-4 h-4 mr-1" />
                                                     HIDE
@@ -424,8 +484,8 @@ export default function NightmarePage() {
             <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
                 <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="text-3xl font-bold text-black text-center">
-                            {actionType === "attack" ? "🗡️ SPILL BLOOD" : "👻 FADE AWAY"}
+                        <DialogTitle className="text-3xl font-nosifer text-black text-center">
+                            {actionType === "attack" ? "🗡️ SPILL BLOOD" : "HIDE"}
                         </DialogTitle>
                     </DialogHeader>
                     
@@ -440,21 +500,21 @@ export default function NightmarePage() {
                                         className="w-full h-full object-cover"
                                     />
                                 </div>
-                                <div className="text-black font-bold text-xl">
-                                    CREATURE #{selectedPepurge.tokenId}
+                                <div className="text-black font-nosifer text-xl">
+                                    PEPURGE #{selectedPepurge.tokenId}
                                 </div>
                                 <div className="flex items-center justify-center space-x-4 mt-2 text-sm">
                                     <div className="flex items-center space-x-1">
                                         <Heart className="text-red-600 w-4 h-4" />
-                                        <span className="text-black font-bold">{selectedPepurge.hp}</span>
+                                        <span className="text-black font-nosifer">{selectedPepurge.hp}</span>
                                     </div>
                                     <div className="flex items-center space-x-1">
                                         <Sword className="text-orange-600 w-4 h-4" />
-                                        <span className="text-black font-bold">{selectedPepurge.attack}</span>
+                                        <span className="text-black font-nosifer">{selectedPepurge.attack}</span>
                                     </div>
                                     <div className="flex items-center space-x-1">
                                         <Shield className="text-blue-600 w-4 h-4" />
-                                        <span className="text-black font-bold">{selectedPepurge.defense}</span>
+                                        <span className="text-black font-nosifer">{selectedPepurge.defense}</span>
                                     </div>
                                 </div>
                             </div>
@@ -462,19 +522,38 @@ export default function NightmarePage() {
                             {/* Target Selection for Attack */}
                             {actionType === "attack" && (
                                 <div className="space-y-2">
-                                    <Label className="text-black font-bold text-lg">
+                                    <Label className="text-black font-nosifer text-lg">
                                         SELECT VICTIM:
                                     </Label>
                                     <Select value={targetTokenId} onValueChange={setTargetTokenId}>
-                                        <SelectTrigger className="bg-white border-2 border-black text-black font-bold">
+                                        <SelectTrigger className="bg-white border-2 border-black text-black font-nosifer">
                                             <SelectValue placeholder="Choose your prey..." />
                                         </SelectTrigger>
                                         <SelectContent className="bg-white border-2 border-black">
-                                            {availableTargets.filter(id => id !== selectedPepurge.tokenId).map((tokenId) => (
-                                                <SelectItem key={tokenId} value={tokenId} className="text-black font-bold">
-                                                    Creature #{tokenId}
+                                            {availableTargets.filter(target => target.tokenId !== selectedPepurge.tokenId).map((target) => (
+                                                <SelectItem key={target.tokenId} value={target.tokenId} className="text-black font-nosifer p-3">
+                                                    <div className="flex items-center space-x-3">
+                                                        <img 
+                                                            src={target.imageUrl} 
+                                                            alt={`Pepurge #${target.tokenId}`}
+                                                            className="w-8 h-8 rounded border border-gray-400"
+                                                        />
+                                                        <div className="flex-1">
+                                                            <div className="font-nosifer">PEPURGE #{target.tokenId}</div>
+                                                            <div className="text-sm flex items-center space-x-2">
+                                                                <span className="text-red-600">❤️ {target.hp}/{target.maxHp}</span>
+                                                                <span className="text-blue-600">🛡️ {target.defense}</span>
+                                                                <span className="text-orange-600">⚔️ {target.attack}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </SelectItem>
                                             ))}
+                                            {availableTargets.filter(target => target.tokenId !== selectedPepurge.tokenId).length === 0 && (
+                                                <div className="p-3 text-center text-gray-500 font-nosifer">
+                                                    No targets available
+                                                </div>
+                                            )}
                                         </SelectContent>
                                     </Select>
                                 </div>
@@ -484,14 +563,14 @@ export default function NightmarePage() {
                             <div className="flex space-x-4">
                                 <Button
                                     onClick={() => setShowActionModal(false)}
-                                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 border-2 border-black"
+                                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-nosifer py-3 border-2 border-black"
                                 >
-                                    RETREAT
+                                    CLOSE
                                 </Button>
                                 <Button
                                     onClick={handleAction}
                                     disabled={(actionType === "attack" && !targetTokenId) || isPerformingAction}
-                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 border-2 border-black disabled:opacity-50"
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-nosifer py-3 border-2 border-black disabled:opacity-50"
                                 >
                                     {isPerformingAction ? (
                                         <>
@@ -514,23 +593,19 @@ export default function NightmarePage() {
 
                             {/* Rules */}
                             <div className="bg-black border-2 border-red-800 p-4 rounded">
-                                <div className="text-[#b31c1e] text-sm space-y-1">
+                                <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
                                     {actionType === "attack" ? (
                                         <>
-                                            <p>• ATTACK EXPOSED CREATURES ONLY</p>
                                             <p>• DEAL DAMAGE BASED ON YOUR ATTACK</p>
                                             <p>• VICTIMS TAKE DAMAGE BASED ON DEFENSE</p>
-                                            <p>• KILL TO SURVIVE THE NIGHTMARE</p>
                                         </>
                                     ) : (
                                         <>
-                                            <p>• 50% CHANCE TO HIDE SUCCESSFULLY</p>
-                                            <p>• HIDDEN CREATURES HEAL TO FULL HP</p>
-                                            <p>• HIDDEN CREATURES CANNOT BE ATTACKED</p>
-                                            <p>• ESCAPE THE NIGHTMARE TEMPORARILY</p>
+                                            <p>• 50% CHANCE TO HIDE</p>
+                                            <p>• HIDDEN PEPURGES HEAL TO FULL HP</p>
+                                            <p>• HIDDEN PEPURGES CANNOT BE ATTACKED</p>
                                         </>
                                     )}
-                                    <p>• ONE ACTION PER DAY PER CREATURE</p>
                                 </div>
                             </div>
                         </div>
@@ -542,7 +617,7 @@ export default function NightmarePage() {
             <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
                 <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
                     <DialogHeader>
-                        <DialogTitle className={`text-3xl font-bold text-center ${
+                        <DialogTitle className={`text-3xl font-nosifer text-center ${
                             actionResult?.success ? 'text-black' : 'text-red-900'
                         }`}>
                             {actionResult?.success ? '🩸 SUCCESS! 🩸' : '💀 FAILED! 💀'}
@@ -551,16 +626,16 @@ export default function NightmarePage() {
                     
                     {actionResult && (
                         <div className="space-y-6 text-center">
-                            <div className="text-black font-bold text-lg">
+                            <div className="text-black font-nosifer text-lg">
                                 {actionResult.message}
                             </div>
                             
                             {actionResult.success ? (
                                 <div className="space-y-3">
-                                    <div className="text-black font-bold">
+                                    <div className="text-black font-nosifer">
                                         {actionResult.type === "attack" 
-                                            ? `Creature #${actionResult.pepurgeTokenId} attacked Creature #${actionResult.targetTokenId}!`
-                                            : `Creature #${actionResult.pepurgeTokenId} attempted to hide!`
+                                            ? `Pepurge #${actionResult.pepurgeTokenId} attacked Pepurge #${actionResult.targetTokenId}!`
+                                            : ``
                                         }
                                     </div>
                                     <div className="bg-black border-2 border-red-800 p-4 rounded">
@@ -570,10 +645,15 @@ export default function NightmarePage() {
                                                     <p>🗡️ Damage dealt to victim!</p>
                                                     <p>🩸 Blood has been spilled!</p>
                                                 </>
-                                            ) : (
+                                            ) : actionResult.hideSucceeded ? (
                                                 <>
                                                     <p>👻 Successfully vanished!</p>
                                                     <p>❤️ Healing to full health!</p>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <p>💀 Failed to disappear!</p>
+                                                    <p>🎯 You remain visible and vulnerable!</p>
                                                 </>
                                             )}
                                         </div>
@@ -581,7 +661,7 @@ export default function NightmarePage() {
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    <div className="text-black font-bold">
+                                    <div className="text-black font-nosifer">
                                         The ritual has failed...
                                     </div>
                                     <div className="bg-black border-2 border-red-800 p-4 rounded">
@@ -594,7 +674,7 @@ export default function NightmarePage() {
                             
                             <Button
                                 onClick={() => setShowResultModal(false)}
-                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-bold py-3 border-2 border-black"
+                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-nosifer py-3 border-2 border-black"
                             >
                                 RETURN TO DARKNESS
                             </Button>

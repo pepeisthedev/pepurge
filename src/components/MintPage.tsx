@@ -15,7 +15,8 @@ import {
 } from "lucide-react"
 import pepurgeAbi from "../assets/abis/pepurge.json"
 
-const pepurgeContractAddress = "0x30E5d5F758E1B2f25b941EC54FF27058A92BA5cb"
+const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS;
+const mintPrice = import.meta.env.VITE_MINT_PRICE;
 
 export default function MintPage() {
     const { open } = useAppKit()
@@ -30,7 +31,7 @@ export default function MintPage() {
         tokenId?: string
         transactionHash?: string
     } | null>(null)
-    const [mintPrice, setMintPrice] = useState<string>("0")
+    
     const [totalSupply, setTotalSupply] = useState<number>(0)
 
     // Function to truncate wallet address
@@ -57,20 +58,15 @@ export default function MintPage() {
             const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
             
-            // Try to get mint price and supply info
-            try {
-                const price = await contract.mintPrice()
-                setMintPrice(ethers.formatEther(price))
-            } catch (error) {
-                console.log("Mint price not available:", error)
-                setMintPrice("0")
-            }
+
 
             try {
-                const supply = await contract.totalSupply()
+                const supply = await contract.totalMinted()
+                console.log("Total minted:", supply)
                 setTotalSupply(Number(supply))
             } catch (error) {
-                console.log("Total supply not available:", error)
+                console.log("Total minted not available:", error)
+                setTotalSupply(0)
             }
 
         
@@ -90,7 +86,8 @@ export default function MintPage() {
             
             // Calculate the value to send (mint price)
             const value = ethers.parseEther(mintPrice)
-            
+            console.log("Minting with value:", value.toString(), "wei")
+            console.log("Mint price in ETH:", mintPrice)
             const tx = await contract.mint({ value })
             const receipt = await tx.wait()
             
@@ -112,7 +109,7 @@ export default function MintPage() {
             
             setMintResult({
                 success: true,
-                message: "CREATURE SUMMONED!",
+                message: "",
                 tokenId: tokenId,
                 transactionHash: tx.hash
             })
@@ -285,34 +282,31 @@ export default function MintPage() {
             <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
                 <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
                     <DialogHeader>
-                        <DialogTitle className={`text-3xl font-bold text-center ${
+                        <DialogTitle className={`text-3xl font-nosifer text-center ${
                             mintResult?.success ? 'text-black' : 'text-red-900'
                         }`}>
-                            {mintResult?.success ? '🎉 SUCCESS! 🎉' : '💀 FAILED! 💀'}
+                            {mintResult?.success ? '💀 SUCCESS! 💀' : '💀 FAILED! 💀'}
                         </DialogTitle>
                     </DialogHeader>
                     
                     {mintResult && (
                         <div className="space-y-6 text-center">
-                            <div className="text-black font-bold text-lg">
+                            <div className="text-black font-nosifer text-lg">
                                 {mintResult.message}
                             </div>
                             
                             {mintResult.success ? (
                                 <div className="space-y-3">
-                                    <div className="text-black font-bold">
-                                        A new creature has been summoned!
-                                    </div>
+                             
                                     {mintResult.tokenId !== "Unknown" && (
                                         <div className="text-black font-bold text-xl">
-                                            Creature #{mintResult.tokenId}
+                                            Pepurge #{mintResult.tokenId}
                                         </div>
                                     )}
                                     <div className="bg-black border-2 border-red-800 p-4 rounded">
-                                        <div className="text-[#b31c1e] text-sm space-y-1">
-                                            <p>👹 Your creature awakens!</p>
-                                            <p>⚔️ Ready for battle!</p>
-                                            <p>🩸 The nightmare begins...</p>
+                                        <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
+                                            <p>👹 Pepurge has been summoned!</p>
+                                            <p>⚔️ Get ready for battle!</p>
                                         </div>
                                     </div>
                                     {mintResult.transactionHash && (
@@ -336,9 +330,9 @@ export default function MintPage() {
                             
                             <Button
                                 onClick={() => setShowResultModal(false)}
-                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-bold py-3 border-2 border-black"
+                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-nosifer py-3 border-2 border-black"
                             >
-                                RETURN TO RITUAL
+                                CLOSE
                             </Button>
                         </div>
                     )}
