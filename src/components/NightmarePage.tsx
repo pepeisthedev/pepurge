@@ -18,7 +18,6 @@ import {
     Clock, 
     LogOut, 
     Zap,
-    Target,
     Ghost
 } from "lucide-react"
 import pepurgeAbi from "../assets/abis/pepurge.json"
@@ -375,9 +374,7 @@ export default function NightmarePage() {
                     <>
                         <div className="text-center mb-8">
                             <p className="text-3xl font-nosifer text-black flex items-center justify-center">
-                                <Skull className="w-8 h-8 mr-3" />
-                                YOUR DARK ARMY ({userPepurges.length})
-                                <Skull className="w-8 h-8 ml-3" />
+                                YOUR ARMY ({userPepurges.length})
                             </p>
                         </div>
                         
@@ -402,7 +399,6 @@ export default function NightmarePage() {
                                     
                                     <div className="text-center space-y-3">
                                         <div className="text-[#b31c1e] font-nosifer text-xl flex items-center justify-center">
-                                            <Skull className="w-5 h-5 mr-2" />
                                             PEPURGE #{pepurge.tokenId}
                                         </div>
 
@@ -587,7 +583,7 @@ export default function NightmarePage() {
                                         </>
                                     ) : actionType === "attack" ? (
                                         <>
-                                            <Target className="w-4 h-4 mr-2" />
+                                            <Sword className="w-4 h-4 mr-2" />
                                             ATTACK
                                         </>
                                     ) : (
