@@ -217,10 +217,7 @@ export default function MintPage() {
                                     className="w-12 ml-4"
                                 />
                             </div>
-                            
-                            <p className="text-xl text-[#b31c1e] opacity-90">
-                                Summon a Pepurge to join your army
-                            </p>
+                       
                         </div>
 
                         {/* Contract Stats */}

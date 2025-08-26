@@ -452,20 +452,28 @@ export default function NightmarePage() {
                                         </div>
                                         
                                         {/* Action Buttons */}
-                                        {pepurge.hp > 0 && pepurge.canAct && (
+                                        {pepurge.hp > 0 && (
                                             <div className="flex space-x-2 pt-2">
-                                                {!pepurge.isHidden && (
-                                                    <Button
-                                                        onClick={() => openActionModal(pepurge, "attack")}
-                                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-nosifer py-2 px-3 border-2 border-red-400 text-sm"
-                                                    >
-                                                        <Target className="w-4 h-4 mr-1" />
-                                                        ATTACK
-                                                    </Button>
-                                                )}
+                                                <Button
+                                                    onClick={() => openActionModal(pepurge, "attack")}
+                                                    disabled={pepurge.isHidden || !pepurge.canAct}
+                                                    className={`flex-1 py-2 px-3 border-2 text-sm font-nosifer ${
+                                                        pepurge.isHidden || !pepurge.canAct 
+                                                            ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed' 
+                                                            : 'bg-red-600 hover:bg-red-700 text-white border-red-400'
+                                                    }`}
+                                                >
+                                                    <Sword className="w-4 h-4 mr-1" />
+                                                    ATTACK
+                                                </Button>
                                                 <Button
                                                     onClick={() => openActionModal(pepurge, "hide")}
-                                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-nosifer py-2 px-3 border-2 border-purple-400 text-sm"
+                                                    disabled={!pepurge.canAct}
+                                                    className={`flex-1 py-2 px-3 border-2 text-sm font-nosifer ${
+                                                        !pepurge.canAct 
+                                                            ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed' 
+                                                            : 'bg-purple-600 hover:bg-purple-700 text-white border-purple-400'
+                                                    }`}
                                                 >
                                                     <Ghost className="w-4 h-4 mr-1" />
                                                     HIDE
