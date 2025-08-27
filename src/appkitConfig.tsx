@@ -17,7 +17,7 @@ const projectId = import.meta.env.VITE_REOWN_PROJECT_ID; //Reown project ID
 // Initialize Reown AppKit (modal instance)
 export const modal = createAppKit({
   adapters: [new EthersAdapter()],       // use Ethers for EVM wallets
-  networks: [hardhat],    // supported EVM chains (Base, Ethereum, Polygon as examples)
+  networks: [baseSepolia],    // supported EVM chains (Base, Ethereum, Polygon as examples)
   metadata,                              // app metadata (for wallet UIs)
   projectId,                             // your Reown/WalletConnect project ID
   features: {
