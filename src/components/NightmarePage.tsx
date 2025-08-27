@@ -61,6 +61,9 @@ export default function NightmarePage() {
     const [selectedPepurge, setSelectedPepurge] = useState<PepurgeNFT | null>(null)
     const [actionType, setActionType] = useState<"attack" | "hide">("attack")
     const [targetTokenId, setTargetTokenId] = useState<string>("")
+    const [currentTargetPage, setCurrentTargetPage] = useState<number>(0)
+    const [randomizedTargets, setRandomizedTargets] = useState<TargetPepurge[]>([])
+    const targetsPerPage = 8
     const [isPerformingAction, setIsPerformingAction] = useState<boolean>(false)
     const [showResultModal, setShowResultModal] = useState<boolean>(false)
     const [actionResult, setActionResult] = useState<{
@@ -192,6 +195,10 @@ export default function NightmarePage() {
             }
             
             setAvailableTargets(targets)
+            
+            // Randomize targets for pagination
+            const shuffled = [...targets].sort(() => Math.random() - 0.5)
+            setRandomizedTargets(shuffled)
         } catch (error) {
             console.error("Error fetching available targets:", error)
         }
@@ -292,6 +299,8 @@ export default function NightmarePage() {
     const openActionModal = (pepurge: PepurgeNFT, action: "attack" | "hide") => {
         setSelectedPepurge(pepurge)
         setActionType(action)
+        setTargetTokenId("")
+        setCurrentTargetPage(0)
         setShowActionModal(true)
     }
 
@@ -484,7 +493,7 @@ export default function NightmarePage() {
 
             {/* Action Modal */}
             <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
-                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
+                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="text-3xl font-nosifer text-black text-center">
                             {actionType === "attack" ? "🗡️ SPILL BLOOD" : "HIDE"}
@@ -523,41 +532,128 @@ export default function NightmarePage() {
 
                             {/* Target Selection for Attack */}
                             {actionType === "attack" && (
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     <Label className="text-black font-nosifer text-lg">
                                         SELECT VICTIM:
                                     </Label>
-                                    <Select value={targetTokenId} onValueChange={setTargetTokenId}>
-                                        <SelectTrigger className="bg-white border-2 border-black text-black font-nosifer">
-                                            <SelectValue placeholder="Choose your prey..." />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-white border-2 border-black">
-                                            {availableTargets.filter(target => target.tokenId !== selectedPepurge.tokenId).map((target) => (
-                                                <SelectItem key={target.tokenId} value={target.tokenId} className="text-black font-nosifer p-3">
+                                    
+                                    {/* Selected Target Display */}
+                                    {targetTokenId && (
+                                        <div className="bg-gray-100 border-2 border-black p-3 rounded">
+                                            {(() => {
+                                                const selectedTarget = availableTargets.find(t => t.tokenId === targetTokenId)
+                                                return selectedTarget ? (
                                                     <div className="flex items-center space-x-3">
                                                         <img 
-                                                            src={target.imageUrl} 
-                                                            alt={`Pepurge #${target.tokenId}`}
-                                                            className="w-8 h-8 rounded border border-gray-400"
+                                                            src={selectedTarget.imageUrl} 
+                                                            alt={`Pepurge #${selectedTarget.tokenId}`}
+                                                            className="w-12 h-12 rounded border border-gray-400"
                                                         />
                                                         <div className="flex-1">
-                                                            <div className="font-nosifer">PEPURGE #{target.tokenId}</div>
-                                                            <div className="text-sm flex items-center space-x-2">
-                                                                <span className="text-red-600">❤️ {target.hp}/{target.maxHp}</span>
-                                                                <span className="text-blue-600">🛡️ {target.defense}</span>
-                                                                <span className="text-orange-600">⚔️ {target.attack}</span>
+                                                            <div className="font-nosifer text-black text-lg">SELECTED: #{selectedTarget.tokenId}</div>
+                                                            <div className="text-sm flex items-center space-x-3">
+                                                                <span className="text-red-600">❤️ {selectedTarget.hp}/{selectedTarget.maxHp}</span>
+                                                                <span className="text-blue-600">🛡️ {selectedTarget.defense}</span>
+                                                                <span className="text-orange-600">⚔️ {selectedTarget.attack}</span>
                                                             </div>
                                                         </div>
+                                                        <Button
+                                                            onClick={() => setTargetTokenId("")}
+                                                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 text-sm font-nosifer"
+                                                        >
+                                                            CHANGE
+                                                        </Button>
                                                     </div>
-                                                </SelectItem>
-                                            ))}
-                                            {availableTargets.filter(target => target.tokenId !== selectedPepurge.tokenId).length === 0 && (
-                                                <div className="p-3 text-center text-gray-500 font-nosifer">
-                                                    No targets available
-                                                </div>
-                                            )}
-                                        </SelectContent>
-                                    </Select>
+                                                ) : (
+                                                    <div className="text-red-600 font-nosifer">Invalid target selected</div>
+                                                )
+                                            })()}
+                                        </div>
+                                    )}
+
+                                    {/* Target Grid */}
+                                    {!targetTokenId && (
+                                        <div className="space-y-3">
+                                            {(() => {
+                                                const filteredTargets = randomizedTargets.filter(target => target.tokenId !== selectedPepurge.tokenId)
+                                                const startIndex = currentTargetPage * targetsPerPage
+                                                const endIndex = startIndex + targetsPerPage
+                                                const currentTargets = filteredTargets.slice(startIndex, endIndex)
+                                                const totalPages = Math.ceil(filteredTargets.length / targetsPerPage)
+
+                                                return (
+                                                    <>
+                                                        {filteredTargets.length === 0 ? (
+                                                            <div className="p-6 text-center text-gray-500 font-nosifer bg-gray-100 rounded border-2 border-gray-300">
+                                                                No targets available
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                {/* Target Grid */}
+                                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white border-2 border-black p-3 rounded max-h-60 overflow-y-auto">
+                                                                    {currentTargets.map((target) => (
+                                                                        <div
+                                                                            key={target.tokenId}
+                                                                            onClick={() => setTargetTokenId(target.tokenId)}
+                                                                            className="bg-gray-50 hover:bg-gray-200 border-2 border-gray-300 hover:border-red-400 p-2 rounded cursor-pointer transition-all"
+                                                                        >
+                                                                            <div className="text-center space-y-1">
+                                                                                <img 
+                                                                                    src={target.imageUrl} 
+                                                                                    alt={`Pepurge #${target.tokenId}`}
+                                                                                    className="w-10 h-10 mx-auto rounded border border-gray-400"
+                                                                                />
+                                                                                <div className="font-nosifer text-black text-xs">#{target.tokenId}</div>
+                                                                                <div className="grid grid-cols-3 gap-1 text-[10px]">
+                                                                                    <div className="text-center">
+                                                                                        <div className="text-red-600 font-bold">{target.hp}</div>
+                                                                                        <div className="text-red-500 text-[8px]">HP</div>
+                                                                                    </div>
+                                                                                    <div className="text-center">
+                                                                                        <div className="text-orange-600 font-bold">{target.attack}</div>
+                                                                                        <div className="text-orange-500 text-[8px]">ATK</div>
+                                                                                    </div>
+                                                                                    <div className="text-center">
+                                                                                        <div className="text-blue-600 font-bold">{target.defense}</div>
+                                                                                        <div className="text-blue-500 text-[8px]">DEF</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+
+                                                                {/* Pagination */}
+                                                                {totalPages > 1 && (
+                                                                    <div className="flex items-center justify-between bg-gray-100 border-2 border-gray-300 p-2 rounded">
+                                                                        <Button
+                                                                            onClick={() => setCurrentTargetPage(Math.max(0, currentTargetPage - 1))}
+                                                                            disabled={currentTargetPage === 0}
+                                                                            className="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 text-xs font-nosifer disabled:opacity-50"
+                                                                        >
+                                                                            PREV
+                                                                        </Button>
+                                                                        <span className="font-nosifer text-black text-xs">
+                                                                            PAGE {currentTargetPage + 1} OF {totalPages}
+                                                                        </span>
+                                                                        <Button
+                                                                            onClick={() => setCurrentTargetPage(Math.min(totalPages - 1, currentTargetPage + 1))}
+                                                                            disabled={currentTargetPage >= totalPages - 1}
+                                                                            className="bg-gray-600 hover:bg-gray-700 text-white px-2 py-1 text-xs font-nosifer disabled:opacity-50"
+                                                                        >
+                                                                            NEXT
+                                                                        </Button>
+                                                                    </div>
+                                                                )}
+
+                                                             
+                                                            </>
+                                                        )}
+                                                    </>
+                                                )
+                                            })()}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -593,23 +689,25 @@ export default function NightmarePage() {
                                 </Button>
                             </div>
 
-                            {/* Rules */}
-                            <div className="bg-black border-2 border-red-800 p-4 rounded">
-                                <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
-                                    {actionType === "attack" ? (
-                                        <>
-                                            <p>• DEAL DAMAGE BASED ON YOUR ATTACK</p>
-                                            <p>• VICTIMS TAKE DAMAGE BASED ON DEFENSE</p>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <p>• 50% CHANCE TO HIDE</p>
-                                            <p>• HIDDEN PEPURGES HEAL TO FULL HP</p>
-                                            <p>• HIDDEN PEPURGES CANNOT BE ATTACKED</p>
-                                        </>
-                                    )}
+                            {/* Rules - Only show when target is selected or for hide action */}
+                            {(actionType === "hide" || (actionType === "attack" && targetTokenId)) && (
+                                <div className="bg-black border-2 border-red-800 p-4 rounded">
+                                    <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
+                                        {actionType === "attack" ? (
+                                            <>
+                                                <p>• DEAL DAMAGE BASED ON YOUR ATTACK</p>
+                                                <p>• VICTIMS TAKE DAMAGE BASED ON DEFENSE</p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p>• 50% CHANCE TO HIDE</p>
+                                                <p>• HIDDEN PEPURGES HEAL TO FULL HP</p>
+                                                <p>• HIDDEN PEPURGES CANNOT BE ATTACKED</p>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
                 </DialogContent>

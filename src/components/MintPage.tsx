@@ -84,11 +84,12 @@ export default function MintPage() {
             const signer = await ethersProvider.getSigner()
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, signer)
             
-            // Calculate the value to send (mint price)
-            const value = ethers.parseEther(mintPrice)
-            console.log("Minting with value:", value.toString(), "wei")
-            console.log("Mint price in ETH:", mintPrice)
-            const tx = await contract.mint({ value })
+            // Get mint price from contract (returns value in wei)
+            const mintPriceWei = await contract.mintPrice()
+            console.log("Mint price from contract (wei):", mintPriceWei.toString())
+            console.log("Mint price in ETH:", ethers.formatEther(mintPriceWei))
+            
+            const tx = await contract.mint({ value: mintPriceWei })
             const receipt = await tx.wait()
             
             // Try to extract token ID from events
