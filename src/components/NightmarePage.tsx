@@ -5,9 +5,7 @@ import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/re
 import { ethers } from "ethers"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
-import { Input } from "./ui/input"
 import { Label } from "./ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { 
     Skull, 
     Sword, 
@@ -20,7 +18,7 @@ import {
     Zap,
     Ghost
 } from "lucide-react"
-import pepurgeAbi from "../assets/abis/pepurge.json"
+import pepurgeAbi from "../assets/abis/Pepurge.json"
 
 const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS;
 

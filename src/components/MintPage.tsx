@@ -13,7 +13,7 @@ import {
     Coins,
     Sparkles
 } from "lucide-react"
-import pepurgeAbi from "../assets/abis/pepurge.json"
+import pepurgeAbi from "../assets/abis/Pepurge.json"
 
 const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS;
 const mintPrice = import.meta.env.VITE_MINT_PRICE;
