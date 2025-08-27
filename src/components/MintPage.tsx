@@ -16,7 +16,6 @@ import {
 import pepurgeAbi from "../assets/abis/Pepurge.json"
 
 const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS;
-const mintPrice = import.meta.env.VITE_MINT_PRICE;
 
 export default function MintPage() {
     const { open } = useAppKit()
@@ -33,6 +32,7 @@ export default function MintPage() {
     } | null>(null)
     
     const [totalSupply, setTotalSupply] = useState<number>(0)
+    const [mintPrice, setMintPrice] = useState<string>("0.0")
 
     // Function to truncate wallet address
     const truncateAddress = (address: string) => {
@@ -58,8 +58,18 @@ export default function MintPage() {
             const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
             
+            // Fetch mint price
+            try {
+                const mintPriceWei = await contract.mintPrice()
+                const mintPriceEth = ethers.formatEther(mintPriceWei)
+                console.log("Mint price:", mintPriceEth, "ETH")
+                setMintPrice(mintPriceEth)
+            } catch (error) {
+                console.log("Mint price not available:", error)
+                setMintPrice("0.0")
+            }
 
-
+            // Fetch total supply
             try {
                 const supply = await contract.totalMinted()
                 console.log("Total minted:", supply)
