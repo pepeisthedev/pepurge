@@ -5,6 +5,7 @@ import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/re
 import { ethers } from "ethers"
 import { Button } from "./ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
+import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { 
     Skull, 
@@ -61,6 +62,7 @@ export default function NightmarePage() {
     const [targetTokenId, setTargetTokenId] = useState<string>("")
     const [currentTargetPage, setCurrentTargetPage] = useState<number>(0)
     const [randomizedTargets, setRandomizedTargets] = useState<TargetPepurge[]>([])
+    const [searchTokenId, setSearchTokenId] = useState<string>("")
     const targetsPerPage = 8
     const [isPerformingAction, setIsPerformingAction] = useState<boolean>(false)
     const [showResultModal, setShowResultModal] = useState<boolean>(false)
@@ -299,6 +301,7 @@ export default function NightmarePage() {
         setActionType(action)
         setTargetTokenId("")
         setCurrentTargetPage(0)
+        setSearchTokenId("")
         setShowActionModal(true)
     }
 
@@ -531,9 +534,11 @@ export default function NightmarePage() {
                             {/* Target Selection for Attack */}
                             {actionType === "attack" && (
                                 <div className="space-y-3">
-                                    <Label className="text-black font-nosifer text-lg">
-                                        SELECT VICTIM:
-                                    </Label>
+                                    <div className="text-center">
+                                        <Label className="text-black font-nosifer text-lg">
+                                            SELECT VICTIM:
+                                        </Label>
+                                    </div>
                                     
                                     {/* Selected Target Display */}
                                     {targetTokenId && (
@@ -573,7 +578,16 @@ export default function NightmarePage() {
                                     {!targetTokenId && (
                                         <div className="space-y-3">
                                             {(() => {
-                                                const filteredTargets = randomizedTargets.filter(target => target.tokenId !== selectedPepurge.tokenId)
+                                                // Filter targets first by user ownership, then by search
+                                                let filteredTargets = randomizedTargets.filter(target => target.tokenId !== selectedPepurge.tokenId)
+                                                
+                                                // Apply search filter if search term exists
+                                                if (searchTokenId.trim()) {
+                                                    filteredTargets = filteredTargets.filter(target => 
+                                                        target.tokenId.toLowerCase().includes(searchTokenId.toLowerCase())
+                                                    )
+                                                }
+                                                
                                                 const startIndex = currentTargetPage * targetsPerPage
                                                 const endIndex = startIndex + targetsPerPage
                                                 const currentTargets = filteredTargets.slice(startIndex, endIndex)
@@ -581,9 +595,28 @@ export default function NightmarePage() {
 
                                                 return (
                                                     <>
+                                                        {/* Search Bar */}
+                                                        <div className="space-y-2">
+                                                            <Input
+                                                                type="text"
+                                                                placeholder="Search by Token ID..."
+                                                                value={searchTokenId}
+                                                                onChange={(e) => {
+                                                                    setSearchTokenId(e.target.value)
+                                                                    setCurrentTargetPage(0) // Reset to first page when searching
+                                                                }}
+                                                                className="bg-white border-2 border-gray-300 text-black placeholder-gray-500 font-nosifer text-sm"
+                                                            />
+                                                            {searchTokenId && (
+                                                                <div className="text-xs text-gray-600 text-center font-nosifer">
+                                                                    Found {filteredTargets.length} target{filteredTargets.length !== 1 ? 's' : ''}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
                                                         {filteredTargets.length === 0 ? (
                                                             <div className="p-6 text-center text-gray-500 font-nosifer bg-gray-100 rounded border-2 border-gray-300">
-                                                                No targets available
+                                                                {searchTokenId ? `No targets found for "${searchTokenId}"` : "No targets available"}
                                                             </div>
                                                         ) : (
                                                             <>

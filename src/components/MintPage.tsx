@@ -271,11 +271,11 @@ export default function MintPage() {
                             <Button
                                 onClick={handleMint}
                                 disabled={isMinting}
-                                className="bg-[#b31c1e] hover:bg-red-700 text-black hover:text-white font-bold py-6 px-12 text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
+                                className="w-full bg-[#b31c1e] hover:bg-red-700 text-black hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
                             >
                                 {isMinting ? (
                                     <>
-                                        <Zap className="w-8 h-8 mr-3 animate-spin" />
+                                        <Zap className="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-3 animate-spin" />
                                         SUMMONING...
                                     </>
                                 ) : (

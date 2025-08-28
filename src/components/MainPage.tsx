@@ -29,14 +29,14 @@ export default function MainPage(): React.JSX.Element {
                             <div className="space-y-4">
                                 <button 
                                     onClick={() => handleSetCurrentView("mint")}
-                                    className="block w-full bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-xl md:text-2xl font-bold py-4 px-8 font-nosifer cursor-pointer"
+                                    className="block rounded w-full bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-xl md:text-2xl font-bold py-4 px-8 font-nosifer cursor-pointer"
                                 >
                                     SUMMON PEPURGE
                                 </button>
                            
                                 <button 
                                     onClick={() => handleSetCurrentView("nightmare")}
-                                    className="block w-full bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-xl md:text-2xl font-bold py-4 px-8 font-nosifer cursor-pointer"
+                                    className="block rounded w-full bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-4 border-black text-xl md:text-2xl font-bold py-4 px-8 font-nosifer cursor-pointer"
                                 >
                                     BATTLE REALM
                                 </button>
@@ -45,10 +45,10 @@ export default function MainPage(): React.JSX.Element {
                     </div>
                 )}
                 {currentView === "mint" && (
-                    <div>
+                    <div className="relative">
                         <button 
                             onClick={() => handleSetCurrentView("landing")} 
-                            className="fixed top-4 left-4 z-50 bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-2 border-black font-bold py-2 px-4 font-nosifer cursor-pointer"
+                            className="absolute rounded top-4 left-4 z-50 bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-2 border-black font-bold py-2 px-4 font-nosifer cursor-pointer"
                         >
                             ← RETURN
                         </button>
@@ -57,10 +57,10 @@ export default function MainPage(): React.JSX.Element {
                 )}
          
                 {currentView === "nightmare" && (
-                    <div>
+                    <div className="relative">
                         <button 
                             onClick={() => handleSetCurrentView("landing")} 
-                            className="fixed top-4 left-4 z-50 bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-2 border-black font-bold py-2 px-4 font-nosifer cursor-pointer"
+                            className="absolute top-4 left-4 z-50 bg-black text-[#b31c1e] hover:bg-red-900 hover:text-white border-2 border-black font-bold py-2 px-4 font-nosifer cursor-pointer"
                         >
                             ← RETURN
                         </button>
