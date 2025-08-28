@@ -100,6 +100,15 @@ export default function MintPage() {
             console.log("Mint price in ETH:", ethers.formatEther(mintPriceWei))
             
             const tx = await contract.mint({ value: mintPriceWei })
+            
+            // Show summoning modal while waiting for transaction
+            setMintResult({
+                success: true,
+                message: "SUMMONING IN PROGRESS...",
+                transactionHash: tx.hash
+            })
+            setShowResultModal(true)
+            
             const receipt = await tx.wait()
             
             // Try to extract token ID from events
@@ -120,7 +129,7 @@ export default function MintPage() {
             
             setMintResult({
                 success: true,
-                message: "",
+                message: "PEPURGE SUMMONED SUCCESSFULLY!",
                 tokenId: tokenId,
                 transactionHash: tx.hash
             })
@@ -288,37 +297,61 @@ export default function MintPage() {
 
             {/* Result Modal */}
             <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
-                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
+                <DialogContent className={`border-4 max-w-md ${
+                    mintResult?.success ? 'bg-green-800 border-green-600' : 'bg-[#b31c1e] border-black'
+                }`}>
                     <DialogHeader>
                         <DialogTitle className={`text-3xl font-nosifer text-center ${
-                            mintResult?.success ? 'text-black' : 'text-red-900'
+                            mintResult?.success ? 'text-green-100' : 'text-red-900'
                         }`}>
-                            {mintResult?.success ? '💀 SUCCESS! 💀' : '💀 FAILED! 💀'}
+                            {mintResult?.success ? 
+                                (mintResult.message === "SUMMONING IN PROGRESS..." ? '⚡ SUMMONING ⚡' : 'SUCCESS!') 
+                                : '💀 FAILED! 💀'
+                            }
                         </DialogTitle>
                     </DialogHeader>
                     
                     {mintResult && (
                         <div className="space-y-6 text-center">
-                            <div className="text-black font-nosifer text-lg">
+                            <div className={`font-nosifer text-lg ${
+                                mintResult.success ? 'text-green-100' : 'text-black'
+                            }`}>
                                 {mintResult.message}
                             </div>
                             
                             {mintResult.success ? (
                                 <div className="space-y-3">
-                             
-                                    {mintResult.tokenId !== "Unknown" && (
-                                        <div className="text-black font-bold text-xl">
-                                            Pepurge #{mintResult.tokenId}
+                                    {mintResult.message === "SUMMONING IN PROGRESS..." ? (
+                                        // Summoning in progress
+                                        <div className="space-y-4">
+                                            <div className="flex justify-center">
+                                                <Zap className="w-16 h-16 text-yellow-400 animate-spin" />
+                                            </div>
+                                            <div className="bg-green-900 border-2 border-green-600 p-4 rounded">
+                                                <div className="text-green-200 text-sm space-y-1 font-nosifer">
+                                                    <p>⚡ Transaction submitted to blockchain</p>
+                                                    <p>🔮 Waiting for confirmation...</p>
+                                                </div>
+                                            </div>
                                         </div>
+                                    ) : (
+                                        // Success completed
+                                        <>
+                                            {mintResult.tokenId !== "Unknown" && (
+                                                <div className="text-green-100 font-bold text-xl">
+                                                    Pepurge #{mintResult.tokenId}
+                                                </div>
+                                            )}
+                                            <div className="bg-red-900 border-2 border-green-600 p-4 rounded">
+                                                <div className="text-green-200 text-sm space-y-1 font-nosifer">
+                                                    <p>🎉 Pepurge has been summoned!</p>
+                                                    <p>⚔️ Ready for battle!</p>
+                                                </div>
+                                            </div>
+                                        </>
                                     )}
-                                    <div className="bg-black border-2 border-red-800 p-4 rounded">
-                                        <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
-                                            <p>👹 Pepurge has been summoned!</p>
-                                            <p>⚔️ Get ready for battle!</p>
-                                        </div>
-                                    </div>
                                     {mintResult.transactionHash && (
-                                        <div className="text-xs text-black opacity-70 break-all">
+                                        <div className="text-xs text-red-200 opacity-70 break-all">
                                             TX: {mintResult.transactionHash}
                                         </div>
                                     )}
@@ -338,9 +371,14 @@ export default function MintPage() {
                             
                             <Button
                                 onClick={() => setShowResultModal(false)}
-                                className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-nosifer py-3 border-2 border-black"
+                                disabled={mintResult?.message === "SUMMONING IN PROGRESS..."}
+                                className={`w-full font-nosifer py-3 border-2 ${
+                                    mintResult?.success 
+                                        ? 'bg-red-700 text-red-100 hover:bg-red-600 border-red-500' 
+                                        : 'bg-black text-[#b31c1e] hover:bg-gray-800 border-black'
+                                } ${mintResult?.message === "SUMMONING IN PROGRESS..." ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
-                                CLOSE
+                                {mintResult?.message === "SUMMONING IN PROGRESS..." ? 'PLEASE WAIT...' : 'CLOSE'}
                             </Button>
                         </div>
                     )}
