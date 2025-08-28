@@ -109,34 +109,56 @@ export default function MintPage() {
             })
             setShowResultModal(true)
             
-            const receipt = await tx.wait()
-            
-            // Try to extract token ID from events
-            let tokenId = "Unknown"
-            if (receipt.logs && receipt.logs.length > 0) {
-                for (const log of receipt.logs) {
-                    try {
-                        const parsedLog = contract.interface.parseLog(log)
-                        if (parsedLog && parsedLog.name === "Transfer" && parsedLog.args) {
-                            tokenId = parsedLog.args.tokenId?.toString() || "Unknown"
-                            break
+            try {
+                const receipt = await tx.wait()
+                
+                // Try to extract token ID from events
+                let tokenId = "Unknown"
+                if (receipt.logs && receipt.logs.length > 0) {
+                    for (const log of receipt.logs) {
+                        try {
+                            const parsedLog = contract.interface.parseLog(log)
+                            if (parsedLog && parsedLog.name === "Transfer" && parsedLog.args) {
+                                tokenId = parsedLog.args.tokenId?.toString() || "Unknown"
+                                break
+                            }
+                        } catch (e) {
+                            // Continue looking for the right log
                         }
-                    } catch (e) {
-                        // Continue looking for the right log
                     }
                 }
+                
+                setMintResult({
+                    success: true,
+                    message: "PEPURGE SUMMONED SUCCESSFULLY!",
+                    tokenId: tokenId,
+                    transactionHash: tx.hash
+                })
+                
+                // Refresh contract info to update total supply
+                await fetchContractInfo()
+                
+                setShowResultModal(true)
+            } catch (txError: any) {
+                // Transaction was submitted but failed during execution
+                console.error("Transaction failed:", txError)
+                
+                let errorMessage = "TRANSACTION FAILED!"
+                if (txError.reason) {
+                    errorMessage = txError.reason
+                } else if (txError.message?.includes("reverted")) {
+                    errorMessage = "TRANSACTION REVERTED"
+                } else if (txError.message?.includes("out of gas")) {
+                    errorMessage = "OUT OF GAS"
+                }
+                
+                setMintResult({
+                    success: false,
+                    message: errorMessage,
+                    transactionHash: tx.hash
+                })
+                setShowResultModal(true)
             }
-            
-            setMintResult({
-                success: true,
-                message: "PEPURGE SUMMONED SUCCESSFULLY!",
-                tokenId: tokenId,
-                transactionHash: tx.hash
-            })
-            setShowResultModal(true)
-            
-            // Refresh contract info
-            await fetchContractInfo()
         } catch (error: any) {
             console.error("Mint failed:", error)
             
@@ -370,7 +392,13 @@ export default function MintPage() {
                             )}
                             
                             <Button
-                                onClick={() => setShowResultModal(false)}
+                                onClick={() => {
+                                    setShowResultModal(false)
+                                    // Force refresh contract info when closing modal
+                                    if (mintResult?.success && mintResult.message !== "SUMMONING IN PROGRESS...") {
+                                        fetchContractInfo()
+                                    }
+                                }}
                                 disabled={mintResult?.message === "SUMMONING IN PROGRESS..."}
                                 className={`w-full font-nosifer py-3 border-2 ${
                                     mintResult?.success 
