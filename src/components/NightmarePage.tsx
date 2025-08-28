@@ -588,7 +588,7 @@ export default function NightmarePage() {
                                                         ) : (
                                                             <>
                                                                 {/* Target Grid */}
-                                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-white border-2 border-black p-3 rounded max-h-60 overflow-y-auto">
+                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-white border-2 border-black p-3 rounded max-h-60 overflow-y-auto">
                                                                     {currentTargets.map((target) => (
                                                                         <div
                                                                             key={target.tokenId}
@@ -599,21 +599,21 @@ export default function NightmarePage() {
                                                                                 <img 
                                                                                     src={target.imageUrl} 
                                                                                     alt={`Pepurge #${target.tokenId}`}
-                                                                                    className="w-10 h-10 mx-auto rounded border border-gray-400"
+                                                                                    className="w-20 h-20 mx-auto rounded border border-gray-400"
                                                                                 />
                                                                                 <div className="font-nosifer text-black text-xs">#{target.tokenId}</div>
-                                                                                <div className="grid grid-cols-3 gap-1 text-[10px]">
+                                                                                <div className="grid grid-cols-3 text-[10px]">
                                                                                     <div className="text-center">
                                                                                         <div className="text-red-600 font-bold">{target.hp}</div>
-                                                                                        <div className="text-red-500 text-[8px]">HP</div>
+                                                                                        <div className="text-red-500 text-[8px]">❤️</div>
                                                                                     </div>
                                                                                     <div className="text-center">
                                                                                         <div className="text-orange-600 font-bold">{target.attack}</div>
-                                                                                        <div className="text-orange-500 text-[8px]">ATK</div>
+                                                                                        <div className="text-orange-500 text-[8px]">⚔️</div>
                                                                                     </div>
                                                                                     <div className="text-center">
                                                                                         <div className="text-blue-600 font-bold">{target.defense}</div>
-                                                                                        <div className="text-blue-500 text-[8px]">DEF</div>
+                                                                                        <div className="text-blue-500 text-[8px]">🛡️</div>
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
