@@ -491,7 +491,7 @@ export default function NightmarePage() {
 
             {/* Action Modal */}
             <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
-                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="bg-[#5D6532] border-4 border-black max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="text-3xl font-nosifer text-black text-center">
                             {actionType === "attack" ? "🗡️ SPILL BLOOD" : "HIDE"}
@@ -588,12 +588,12 @@ export default function NightmarePage() {
                                                         ) : (
                                                             <>
                                                                 {/* Target Grid */}
-                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-white border-2 border-black p-3 rounded max-h-60 overflow-y-auto">
+                                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 bg-gray-600 border-2 border-black p-3 rounded max-h-60 overflow-y-auto">
                                                                     {currentTargets.map((target) => (
                                                                         <div
                                                                             key={target.tokenId}
                                                                             onClick={() => setTargetTokenId(target.tokenId)}
-                                                                            className="bg-gray-50 hover:bg-gray-200 border-2 border-gray-300 hover:border-red-400 p-2 rounded cursor-pointer transition-all"
+                                                                            className="bg-gray-50 hover:bg-gray-200 border-2 bg-gray-300 border-gray-300 hover:border-red-400 p-2 rounded cursor-pointer transition-all"
                                                                         >
                                                                             <div className="text-center space-y-1">
                                                                                 <img 
