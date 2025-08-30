@@ -73,6 +73,11 @@ export default function NightmarePage() {
         pepurgeTokenId?: string
         targetTokenId?: string
         hideSucceeded?: boolean
+        // Attack result data
+        damage?: number
+        victimHPBefore?: number
+        victimHPAfter?: number
+        killed?: boolean
     } | null>(null)
 
     // Function to truncate wallet address
@@ -219,13 +224,61 @@ export default function NightmarePage() {
             let hideSucceeded = false
             
             if (actionType === "attack") {
-                tx = await contract.Attack(selectedPepurge.tokenId, targetTokenId)
+                // Estimate gas and add 100% buffer for attack
+                const estimatedGas = await contract.Attack.estimateGas(selectedPepurge.tokenId, targetTokenId)
+                const gasLimit = estimatedGas * 2n // 100% over estimated
+                
+                tx = await contract.Attack(selectedPepurge.tokenId, targetTokenId, { gasLimit })
                 resultMessage = "BLOOD SPILLED!"
             } else {
-                tx = await contract.Hide(selectedPepurge.tokenId)
+                // Estimate gas and add 100% buffer for hide
+                const estimatedGas = await contract.Hide.estimateGas(selectedPepurge.tokenId)
+                const gasLimit = estimatedGas * 2n // 100% over estimated
+                
+                tx = await contract.Hide(selectedPepurge.tokenId, { gasLimit })
             }
             
             const receipt = await tx.wait()
+            
+            // Initialize attack result data
+            let damage: number | undefined
+            let victimHPBefore: number | undefined
+            let victimHPAfter: number | undefined
+            let killed: boolean | undefined
+            
+            // Parse events based on action type
+            if (actionType === "attack") {
+                // Parse AttackResult event
+                receipt.logs.forEach((log: any) => {
+                    try {
+                        const parsedLog = contract.interface.parseLog(log)
+                        if (parsedLog?.name === "AttackResult") {
+                            damage = Number(parsedLog.args.damage)
+                            victimHPBefore = Number(parsedLog.args.victimHPBefore)
+                            victimHPAfter = Number(parsedLog.args.victimHPAfter)
+                            killed = parsedLog.args.killed
+                            
+                            console.log("AttackResult event:", {
+                                attackerTokenId: Number(parsedLog.args.attackerTokenId),
+                                victimTokenId: Number(parsedLog.args.victimTokenId),
+                                damage,
+                                victimHPBefore,
+                                victimHPAfter,
+                                killed
+                            })
+                            
+                            // Update result message based on attack outcome
+                            if (killed) {
+                                resultMessage = "TARGET ELIMINATED!"
+                            } else {
+                                resultMessage = "BLOOD SPILLED!"
+                            }
+                        }
+                    } catch (e) {
+                        console.log("Unparsed log:", log)
+                    }
+                })
+            }
             
             // For hide action, parse the HideAttempt event to check if it succeeded
             if (actionType === "hide") {
@@ -257,7 +310,12 @@ export default function NightmarePage() {
                 type: actionType,
                 pepurgeTokenId: selectedPepurge.tokenId,
                 targetTokenId: targetTokenId,
-                hideSucceeded: actionType === "hide" ? hideSucceeded : undefined
+                hideSucceeded: actionType === "hide" ? hideSucceeded : undefined,
+                // Attack result data
+                damage: actionType === "attack" ? damage : undefined,
+                victimHPBefore: actionType === "attack" ? victimHPBefore : undefined,
+                victimHPAfter: actionType === "attack" ? victimHPAfter : undefined,
+                killed: actionType === "attack" ? killed : undefined
             })
             setShowResultModal(true)
             
@@ -770,11 +828,32 @@ export default function NightmarePage() {
                                         }
                                     </div>
                                     <div className="bg-black border-2 border-red-800 p-4 rounded">
-                                        <div className="text-[#b31c1e] text-sm space-y-1">
+                                        <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
                                             {actionResult.type === "attack" ? (
                                                 <>
-                                                    <p>🗡️ Damage dealt to victim!</p>
-                                                    <p>🩸 Blood has been spilled!</p>
+                                                    {actionResult.killed ? (
+                                                        <>
+                                                            <p>🗡️ TARGET KILLED!</p>
+                                                            <p>💀 Pepurge #{actionResult.targetTokenId} has been eliminated!</p>
+                                                            {actionResult.damage !== undefined && (
+                                                                <p>⚔️ Damage Dealt: {actionResult.damage}</p>
+                                                            )}
+                                                            {actionResult.victimHPBefore !== undefined && actionResult.victimHPAfter !== undefined && (
+                                                                <p>❤️ HP: {actionResult.victimHPBefore} → {actionResult.victimHPAfter}</p>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <p>🗡️ DAMAGE DEALT!</p>
+                                                            <p>🎯 Target still alive!</p>
+                                                            {actionResult.damage !== undefined && (
+                                                                <p>⚔️ Damage Dealt: {actionResult.damage}</p>
+                                                            )}
+                                                            {actionResult.victimHPBefore !== undefined && actionResult.victimHPAfter !== undefined && (
+                                                                <p>❤️ Target HP: {actionResult.victimHPBefore} → {actionResult.victimHPAfter}</p>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </>
                                             ) : actionResult.hideSucceeded ? (
                                                 <>
