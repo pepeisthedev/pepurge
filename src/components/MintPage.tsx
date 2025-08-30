@@ -99,7 +99,16 @@ export default function MintPage() {
             console.log("Mint price from contract (wei):", mintPriceWei.toString())
             console.log("Mint price in ETH:", ethers.formatEther(mintPriceWei))
             
-            const tx = await contract.mint({ value: mintPriceWei })
+            // Estimate gas and add 100% buffer
+            const estimatedGas = await contract.mint.estimateGas({ value: mintPriceWei })
+            const gasLimit = estimatedGas * 2n // 100% over estimated
+          //  console.log("Estimated gas:", estimatedGas.toString())
+           // console.log("Gas limit (2x):", gasLimit.toString())
+            
+            const tx = await contract.mint({ 
+                value: mintPriceWei,
+                gasLimit: gasLimit
+            })
             
             // Show summoning modal while waiting for transaction
             setMintResult({
