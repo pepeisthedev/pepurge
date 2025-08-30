@@ -40,6 +40,7 @@ export default function MintPage() {
     
     const [totalSupply, setTotalSupply] = useState<number>(0)
     const [mintPrice, setMintPrice] = useState<string>("0.0")
+    const [collectionMinting, setCollectionMinting] = useState<boolean>(true)
 
     // Function to truncate wallet address
     const truncateAddress = (address: string) => {
@@ -64,31 +65,34 @@ export default function MintPage() {
 
             const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
-            
+
             // Fetch mint price
             try {
                 const mintPriceWei = await contract.mintPrice()
                 const mintPriceEth = ethers.formatEther(mintPriceWei)
-                console.log("Mint price:", mintPriceEth, "ETH")
                 setMintPrice(mintPriceEth)
             } catch (error) {
-                console.log("Mint price not available:", error)
                 setMintPrice("0.0")
             }
 
             // Fetch total supply
+            let totalMinted = 0
+            let supply = 10000
             try {
-                const supply = await contract.totalMinted()
-                console.log("Total minted:", supply)
-                setTotalSupply(Number(supply))
+                totalMinted = await contract.totalMinted()
+                setTotalSupply(Number(totalMinted))
             } catch (error) {
-                console.log("Total minted not available:", error)
                 setTotalSupply(0)
             }
-
-        
+            try {
+                supply = await contract.supply()
+            } catch (error) {
+                supply = 10000
+            }
+            // Set collectionMinting: true if not minted out, false if minted out
+            setCollectionMinting(Number(totalMinted) < Number(supply))
         } catch (error) {
-            console.error("Error fetching contract info:", error)
+            setCollectionMinting(true)
         }
     }
 
@@ -354,7 +358,7 @@ export default function MintPage() {
                         <div className="space-y-4">
                             <Button
                                 onClick={handleMint}
-                                disabled={isMinting}
+                                disabled={isMinting || !collectionMinting}
                                 className="w-full bg-[#b31c1e] hover:bg-red-700 text-white hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
                             >
                                 {isMinting ? (
@@ -362,10 +366,10 @@ export default function MintPage() {
                                         <Zap className="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-3 animate-spin" />
                                         SUMMONING...
                                     </>
+                                ) : !collectionMinting ? (
+                                    <>MINTED OUT!</>
                                 ) : (
-                                    <>
-                                        SUMMON PEPURGE
-                                    </>
+                                    <>SUMMON PEPURGE</>
                                 )}
                             </Button>
                             

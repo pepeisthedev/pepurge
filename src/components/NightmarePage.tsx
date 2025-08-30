@@ -80,6 +80,8 @@ export default function NightmarePage() {
         victimHPAfter?: number
         killed?: boolean
     } | null>(null)
+    const [canCall, setCanCall] = useState<boolean>(true);
+    const [collectionMinting, setCollectionMinting] = useState<boolean>(false);
 
     // Fetch mint price for reward display
     useEffect(() => {
@@ -146,6 +148,27 @@ export default function NightmarePage() {
             fetchAvailableTargets()
         }
     }, [userPepurges, isConnected, address, walletProvider])
+
+    // Fetch collection status
+    useEffect(() => {
+        const fetchCollectionStatus = async () => {
+            try {
+                if (!walletProvider) return;
+                const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider);
+                const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider);
+                const totalMinted = await contract.totalMinted();
+                const supply = await contract.supply();
+                const canCallVal = totalMinted >= supply;
+                setCanCall(canCallVal);
+                setCollectionMinting(!canCallVal);
+             //   console.log("Can call function (collection still minting?):", canCallVal);
+            } catch (e) {
+                setCanCall(true);
+                setCollectionMinting(false);
+            }
+        };
+        fetchCollectionStatus();
+    }, [walletProvider])
 
     const fetchUserPepurges = async () => {
         try {
@@ -465,104 +488,118 @@ export default function NightmarePage() {
                         </div>
                         
                         {/* Pepurge Grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3 md:gap-6">
-                            {userPepurges.map((pepurge) => (
-                                <div
-                                    key={pepurge.tokenId}
-                                    className={`bg-black border-2 md:border-4 border-red-800 p-3 md:p-6 rounded-lg shadow-2xl transform transition-all duration-300 ${
-                                        pepurge.hp === 0 ? 'opacity-50 grayscale' : 'hover:border-red-400'
-                                    } ${pepurge.isHidden ? 'border-purple-600' : ''}`}
-                                >
-                                    <div className="aspect-square mb-2 md:mb-4 overflow-hidden rounded-lg border-2 border-red-600">
-                                        <img 
-                                            src={pepurge.imageUrl}
-                                            alt={`Pepurge #${pepurge.tokenId}`}
-                                            className={`w-full h-full object-cover`}
-                                        />
+                        <div className="relative">
+                            {collectionMinting && (
+                                <>
+                                    {/* Grey transparent overlay */}
+                                    <div className="fixed inset-0 bg-gray-800/60 z-30 pointer-events-none" />
+                                    {/* Centered text overlay */}
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-40">
+                                        <span className="text-white font-bold text-3xl md:text-4xl font-nosifer text-center drop-shadow-lg bg-black bg-opacity-40 px-8 py-4 rounded-xl border-4 border-white">
+                                            Collection still minting
+                                        </span>
                                     </div>
-                                    
-                                    <div className="text-center space-y-1 md:space-y-3">
-                                        <div className="text-[#b31c1e] font-nosifer text-sm md:text-xl flex items-center justify-center">
-                                            <span className="hidden md:inline">PEPURGE </span>#{pepurge.tokenId}
-                                        </div>
-
-                                        {/* Status */}
-                                        {pepurge.isHidden ? (
-                                            <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-purple-900 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                <EyeOff className="text-purple-300 w-3 h-3 md:w-5 md:h-5" />
-                                                <span className="text-purple-300 font-nosifer text-xs md:text-sm">HIDDEN</span>
-                                            </div>
-                                        ) : pepurge.hp === 0 ? (
-                                            <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-800 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                <Skull className="text-gray-400 w-3 h-3 md:w-5 md:h-5" />
-                                                <span className="text-gray-400 font-nosifer text-xs md:text-sm">DEAD</span>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-red-900 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                <Eye className="text-red-300 w-3 h-3 md:w-5 md:h-5" />
-                                                <span className="text-red-300 font-nosifer text-xs md:text-sm">EXPOSED</span>
-                                            </div>
-                                        )}
-                                        
-                                        {/* Stats */}
-                                        <div className="grid grid-cols-3 gap-1 md:gap-2 text-xs md:text-sm">
-                                            <div className="bg-red-900 p-1 md:p-2 rounded text-center">
-                                                <Heart className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-red-400" />
-                                                <div className="text-red-200 text-[8px] md:text-xs">{pepurge.hp}/{pepurge.maxHp}</div>
-                                                <div className="text-red-400 text-[8px] md:text-xs hidden md:block">HP</div>
-                                            </div>
-                                            <div className="bg-orange-900 p-1 md:p-2 rounded text-center">
-                                                <Sword className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-orange-400" />
-                                                <div className="text-orange-200 text-[8px] md:text-xs">{pepurge.attack}</div>
-                                                <div className="text-orange-400 text-[8px] md:text-xs hidden md:block">ATK</div>
-                                            </div>
-                                            <div className="bg-blue-900 p-1 md:p-2 rounded text-center">
-                                                <Shield className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-blue-400" />
-                                                <div className="text-blue-200 text-[8px] md:text-xs">{pepurge.defense}</div>
-                                                <div className="text-blue-400 text-[8px] md:text-xs hidden md:block">DEF</div>
-                                            </div>
-                                        </div>
-
-                                        {/* Cooldown */}
-                                        <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-900 py-1 md:py-2 px-2 md:px-4 rounded">
-                                            <Clock className={`w-3 h-3 md:w-4 md:h-4 ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`} />
-                                            <span className={`text-xs md:text-sm font-nosifer ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`}>
-                                                {pepurge.timeUntilNextAction}
-                                            </span>
+                                </>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-3 md:gap-6">
+                                {userPepurges.map((pepurge) => (
+                                    <div
+                                        key={pepurge.tokenId}
+                                        className={`bg-black border-2 md:border-4 border-red-800 p-3 md:p-6 rounded-lg shadow-2xl transform transition-all duration-300 ${
+                                            pepurge.hp === 0 ? 'opacity-50 grayscale' : 'hover:border-red-400'
+                                        } ${pepurge.isHidden ? 'border-purple-600' : ''}`}
+                                    >
+                                        <div className="aspect-square mb-2 md:mb-4 overflow-hidden rounded-lg border-2 border-red-600">
+                                            <img 
+                                                src={pepurge.imageUrl}
+                                                alt={`Pepurge #${pepurge.tokenId}`}
+                                                className={`w-full h-full object-cover`}
+                                            />
                                         </div>
                                         
-                                        {/* Action Buttons */}
-                                        {pepurge.hp > 0 && (
-                                            <div className="flex flex-col md:flex-row space-y-1 md:space-y-0 md:space-x-2 pt-1 md:pt-2">
-                                                <Button
-                                                    onClick={() => openActionModal(pepurge, "attack")}
-                                                    disabled={pepurge.isHidden || !pepurge.canAct}
-                                                    className={`flex-1 py-1 md:py-2 px-2 md:px-3 border-2 text-xs md:text-sm font-nosifer ${
-                                                        pepurge.isHidden || !pepurge.canAct 
-                                                            ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed' 
-                                                            : 'bg-red-600 hover:bg-red-700 text-white border-red-400'
-                                                    }`}
-                                                >
-                                                    <Sword className="w-3 h-3 md:w-4 md:h-4 mr-1" />
-                                                    ATTACK
-                                                </Button>
-                                                <Button
-                                                    onClick={() => openActionModal(pepurge, "hide")}
-                                                    disabled={!pepurge.canAct}
-                                                    className={`flex-1 py-1 md:py-2 px-2 md:px-3 border-2 text-xs md:text-sm font-nosifer ${
-                                                        !pepurge.canAct 
-                                                            ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed' 
-                                                            : 'bg-purple-600 hover:bg-purple-700 text-white border-purple-400'
-                                                    }`}
-                                                >
-                                                    <Ghost className="w-3 h-3 md:w-4 md:h-4 mr-1" />
-                                                    HIDE
-                                                </Button>
+                                        <div className="text-center space-y-1 md:space-y-3">
+                                            <div className="text-[#b31c1e] font-nosifer text-sm md:text-xl flex items-center justify-center">
+                                                <span className="hidden md:inline">PEPURGE </span>#{pepurge.tokenId}
                                             </div>
-                                        )}
+
+                                            {/* Status */}
+                                            {pepurge.isHidden ? (
+                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-purple-900 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                    <EyeOff className="text-purple-300 w-3 h-3 md:w-5 md:h-5" />
+                                                    <span className="text-purple-300 font-nosifer text-xs md:text-sm">HIDDEN</span>
+                                                </div>
+                                            ) : pepurge.hp === 0 ? (
+                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-800 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                    <Skull className="text-gray-400 w-3 h-3 md:w-5 md:h-5" />
+                                                    <span className="text-gray-400 font-nosifer text-xs md:text-sm">DEAD</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-red-900 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                    <Eye className="text-red-300 w-3 h-3 md:w-5 md:h-5" />
+                                                    <span className="text-red-300 font-nosifer text-xs md:text-sm">EXPOSED</span>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Stats */}
+                                            <div className="grid grid-cols-3 gap-1 md:gap-2 text-xs md:text-sm">
+                                                <div className="bg-red-900 p-1 md:p-2 rounded text-center">
+                                                    <Heart className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-red-400" />
+                                                    <div className="text-red-200 text-[8px] md:text-xs">{pepurge.hp}/{pepurge.maxHp}</div>
+                                                    <div className="text-red-400 text-[8px] md:text-xs hidden md:block">HP</div>
+                                                </div>
+                                                <div className="bg-orange-900 p-1 md:p-2 rounded text-center">
+                                                    <Sword className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-orange-400" />
+                                                    <div className="text-orange-200 text-[8px] md:text-xs">{pepurge.attack}</div>
+                                                    <div className="text-orange-400 text-[8px] md:text-xs hidden md:block">ATK</div>
+                                                </div>
+                                                <div className="bg-blue-900 p-1 md:p-2 rounded text-center">
+                                                    <Shield className="w-3 h-3 md:w-4 md:h-4 mx-auto mb-0.5 md:mb-1 text-blue-400" />
+                                                    <div className="text-blue-200 text-[8px] md:text-xs">{pepurge.defense}</div>
+                                                    <div className="text-blue-400 text-[8px] md:text-xs hidden md:block">DEF</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Cooldown */}
+                                            <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-900 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                <Clock className={`w-3 h-3 md:w-4 md:h-4 ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`} />
+                                                <span className={`text-xs md:text-sm font-nosifer ${pepurge.canAct ? 'text-green-400' : 'text-orange-400'}`}>
+                                                    {pepurge.timeUntilNextAction}
+                                                </span>
+                                            </div>
+                                            
+                                            {/* Action Buttons */}
+                                            {pepurge.hp > 0 && (
+                                                <div className="flex flex-col md:flex-row space-y-1 md:space-y-0 md:space-x-2 pt-1 md:pt-2">
+                                                    <Button
+                                                        onClick={() => openActionModal(pepurge, "attack")}
+                                                        disabled={pepurge.isHidden || !pepurge.canAct || !canCall}
+                                                        className={`flex-1 py-1 md:py-2 px-2 md:px-3 border-2 text-xs md:text-sm font-nosifer ${
+                                                            pepurge.isHidden || !pepurge.canAct || !canCall
+                                                                ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed'
+                                                                : 'bg-red-600 hover:bg-red-700 text-white border-red-400'
+                                                        }`}
+                                                    >
+                                                        <Sword className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                                                        ATTACK
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() => openActionModal(pepurge, "hide")}
+                                                        disabled={!pepurge.canAct || !canCall}
+                                                        className={`flex-1 py-1 md:py-2 px-2 md:px-3 border-2 text-xs md:text-sm font-nosifer ${
+                                                            !pepurge.canAct || !canCall
+                                                                ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed'
+                                                                : 'bg-purple-600 hover:bg-purple-700 text-white border-purple-400'
+                                                        }`}
+                                                    >
+                                                        <Ghost className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                                                        HIDE
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     </>
                 )}
