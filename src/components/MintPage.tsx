@@ -355,7 +355,7 @@ export default function MintPage() {
                             <Button
                                 onClick={handleMint}
                                 disabled={isMinting}
-                                className="w-full bg-[#b31c1e] hover:bg-red-700 text-black hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
+                                className="w-full bg-[#b31c1e] hover:bg-red-700 text-white hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
                             >
                                 {isMinting ? (
                                     <>
@@ -382,23 +382,20 @@ export default function MintPage() {
             {/* Result Modal */}
             <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
                 <DialogContent className={`border-4 max-w-md ${
-                    mintResult?.success ? 'bg-green-800 border-green-600' : 'bg-[#b31c1e] border-black'
+                    'bg-[#b31c1e] border-black'
                 }`}>
-                    <DialogHeader>
-                        <DialogTitle className={`text-3xl font-nosifer text-center ${
-                            mintResult?.success ? 'text-green-100' : 'text-red-900'
-                        }`}>
-                            {mintResult?.success ? 
-                                (mintResult.message === "SUMMONING IN PROGRESS..." ? '⚡ SUMMONING ⚡' : 'SUCCESS!') 
-                                : '💀 FAILED! 💀'
-                            }
-                        </DialogTitle>
-                    </DialogHeader>
+                    {!mintResult?.success && (
+                        <DialogHeader>
+                            <DialogTitle className="text-3xl font-nosifer text-center text-white">
+                                💀 FAILED! 💀
+                            </DialogTitle>
+                        </DialogHeader>
+                    )}
                     
                     {mintResult && (
                         <div className="space-y-6 text-center">
                             <div className={`font-nosifer text-lg ${
-                                mintResult.success ? 'text-green-100' : 'text-black'
+                                'text-white'
                             }`}>
                                 {mintResult.message}
                             </div>
@@ -411,7 +408,7 @@ export default function MintPage() {
                                             <div className="flex justify-center">
                                                 <Zap className="w-16 h-16 text-yellow-400 animate-spin" />
                                             </div>
-                                            <div className="bg-green-900 border-2 border-green-600 p-4 rounded">
+                                            <div className="bg-green-900 border-2 border-black p-4 rounded">
                                                 <div className="text-green-200 text-sm space-y-1 font-nosifer">
                                                     <p>⚡ Transaction submitted to blockchain</p>
                                                     <p>🔮 Waiting for confirmation...</p>
@@ -423,14 +420,14 @@ export default function MintPage() {
                                         <>
                                             {mintResult.tokenId !== "Unknown" && (
                                                 <div className="space-y-4">
-                                                    <div className="text-green-100 font-bold text-xl">
+                                                    <div className="text-white font-bold text-xl">
                                                         Pepurge #{mintResult.tokenId}
                                                     </div>
                                                     
                                                     {/* Pepurge Image and Stats */}
                                                     {mintResult.pepeType !== undefined && (
                                                         <div className="space-y-3">
-                                                            <div className="w-32 h-32 mx-auto border-2 border-green-400 rounded-lg overflow-hidden">
+                                                            <div className="w-42 h-42 mx-auto border-2 border-black rounded-lg overflow-hidden">
                                                                 <img 
                                                                     src={`/pepes/${Number(mintResult.pepeType)}.png`}
                                                                     alt={`Pepurge Type ${mintResult.pepeType}`}
@@ -444,17 +441,17 @@ export default function MintPage() {
                                                             
                                                             {/* Stats Display */}
                                                             <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
-                                                                <div className="bg-red-800 border border-red-600 p-2 rounded text-center">
+                                                                <div className="bg-red-800 border border-black p-2 rounded text-center">
                                                                     <Heart className="w-4 h-4 mx-auto mb-1 text-red-300" />
                                                                     <div className="text-red-100 text-sm font-bold">{mintResult.maxHP}</div>
                                                                     <div className="text-red-300 text-xs">HP</div>
                                                                 </div>
-                                                                <div className="bg-orange-800 border border-orange-600 p-2 rounded text-center">
+                                                                <div className="bg-orange-800 border border-black p-2 rounded text-center">
                                                                     <Sword className="w-4 h-4 mx-auto mb-1 text-orange-300" />
                                                                     <div className="text-orange-100 text-sm font-bold">{mintResult.attack}</div>
                                                                     <div className="text-orange-300 text-xs">ATK</div>
                                                                 </div>
-                                                                <div className="bg-blue-800 border border-blue-600 p-2 rounded text-center">
+                                                                <div className="bg-blue-800 border border-black p-2 rounded text-center">
                                                                     <Shield className="w-4 h-4 mx-auto mb-1 text-blue-300" />
                                                                     <div className="text-blue-100 text-sm font-bold">{mintResult.defense}</div>
                                                                     <div className="text-blue-300 text-xs">DEF</div>
@@ -464,12 +461,7 @@ export default function MintPage() {
                                                     )}
                                                 </div>
                                             )}
-                                            <div className="bg-red-900 border-2 border-green-600 p-4 rounded">
-                                                <div className="text-green-200 text-sm space-y-1 font-nosifer">
-                                                    <p>🎉 Pepurge has been summoned!</p>
-                                                    <p>⚔️ Ready for battle!</p>
-                                                </div>
-                                            </div>
+                                        
                                         </>
                                     )}
                                     {mintResult.transactionHash && (
@@ -480,7 +472,7 @@ export default function MintPage() {
                                 </div>
                             ) : (
                                 <div className="space-y-3">
-                                    <div className="text-black font-bold">
+                                    <div className="text-white font-bold">
                                         The summoning ritual has failed...
                                     </div>
                                     <div className="bg-black border-2 border-red-800 p-4 rounded">

@@ -66,6 +66,7 @@ export default function NightmarePage() {
     const targetsPerPage = 8
     const [isPerformingAction, setIsPerformingAction] = useState<boolean>(false)
     const [showResultModal, setShowResultModal] = useState<boolean>(false)
+    const [mintPrice, setMintPrice] = useState<string>("0.0")
     const [actionResult, setActionResult] = useState<{
         success: boolean
         message: string
@@ -80,6 +81,23 @@ export default function NightmarePage() {
         killed?: boolean
     } | null>(null)
 
+    // Fetch mint price for reward display
+    useEffect(() => {
+        const fetchMintPrice = async () => {
+            try {
+                if (!walletProvider) return
+                const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
+                const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
+                const mintPriceWei = await contract.mintPrice()
+                const mintPriceEth = ethers.formatEther(mintPriceWei)
+                setMintPrice(mintPriceEth)
+            } catch (error) {
+                setMintPrice("0.0")
+            }
+        }
+        fetchMintPrice()
+    }, [walletProvider])
+
     // Function to truncate wallet address
     const truncateAddress = (address: string) => {
         return `${address.slice(0, 6)}...${address.slice(-4)}`
@@ -93,13 +111,13 @@ export default function NightmarePage() {
 
         const now = Math.floor(Date.now() / 1000)
         const timeSinceLastAction = now - lastActionTimestamp
-        const twentyFourHours = 24 * 60 * 60
+        const TwelveHours = 12 * 60 * 60
 
-        if (timeSinceLastAction >= twentyFourHours) {
+        if (timeSinceLastAction >= TwelveHours) {
             return { canAct: true, timeUntilNextAction: "Ready" }
         }
 
-        const timeRemaining = twentyFourHours - timeSinceLastAction
+        const timeRemaining = TwelveHours - timeSinceLastAction
         const hours = Math.floor(timeRemaining / 3600)
         const minutes = Math.floor((timeRemaining % 3600) / 60)
 
@@ -416,7 +434,7 @@ export default function NightmarePage() {
                             className="w-[60vw] max-w-3xl mx-auto drop-shadow-2xl"
                         />
                     </div>
-                    <p className="text-xl md:text-2xl text-black font-nosifer opacity-90">
+                    <p className="text-xl md:text-2xl text-white font-nosifer">
                         PURGE OR BE PURGED
                     </p>
                 </div>
@@ -441,7 +459,7 @@ export default function NightmarePage() {
                 ) : (
                     <>
                         <div className="text-center mb-8">
-                            <p className="text-3xl font-nosifer text-black flex items-center justify-center">
+                            <p className="text-3xl font-nosifer text-white flex items-center justify-center">
                                 YOUR ARMY ({userPepurges.length})
                             </p>
                         </div>
@@ -552,9 +570,9 @@ export default function NightmarePage() {
 
             {/* Action Modal */}
             <Dialog open={showActionModal} onOpenChange={setShowActionModal}>
-                <DialogContent className="bg-[#5D6532] border-4 border-black max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-3xl font-nosifer text-black text-center">
+                        <DialogTitle className="text-3xl font-nosifer text-white text-center">
                             {actionType === "attack" ? "🗡️ SPILL BLOOD" : "HIDE"}
                         </DialogTitle>
                     </DialogHeader>
@@ -570,21 +588,21 @@ export default function NightmarePage() {
                                         className="w-full h-full object-cover"
                                     />
                                 </div>
-                                <div className="text-black font-nosifer text-xl">
+                                <div className="text-white font-nosifer text-xl">
                                     PEPURGE #{selectedPepurge.tokenId}
                                 </div>
                                 <div className="flex items-center justify-center space-x-4 mt-2 text-sm">
                                     <div className="flex items-center space-x-1">
                                         <Heart className="text-red-600 w-4 h-4" />
-                                        <span className="text-black font-nosifer">{selectedPepurge.hp}</span>
+                                        <span className="text-white font-nosifer">{selectedPepurge.hp}</span>
                                     </div>
                                     <div className="flex items-center space-x-1">
                                         <Sword className="text-orange-600 w-4 h-4" />
-                                        <span className="text-black font-nosifer">{selectedPepurge.attack}</span>
+                                        <span className="text-white font-nosifer">{selectedPepurge.attack}</span>
                                     </div>
                                     <div className="flex items-center space-x-1">
                                         <Shield className="text-blue-600 w-4 h-4" />
-                                        <span className="text-black font-nosifer">{selectedPepurge.defense}</span>
+                                        <span className="text-white font-nosifer">{selectedPepurge.defense}</span>
                                     </div>
                                 </div>
                             </div>
@@ -593,7 +611,7 @@ export default function NightmarePage() {
                             {actionType === "attack" && (
                                 <div className="space-y-3">
                                     <div className="text-center">
-                                        <Label className="text-black font-nosifer text-lg">
+                                        <Label className="text-white font-nosifer text-lg">
                                             SELECT VICTIM:
                                         </Label>
                                     </div>
@@ -656,7 +674,9 @@ export default function NightmarePage() {
                                                         {/* Search Bar */}
                                                         <div className="space-y-2">
                                                             <Input
-                                                                type="text"
+                                                                type="number"
+                                                                inputMode="numeric"
+                                                                pattern="[0-9]*"
                                                                 placeholder="Search by Token ID..."
                                                                 value={searchTokenId}
                                                                 onChange={(e) => {
@@ -664,12 +684,9 @@ export default function NightmarePage() {
                                                                     setCurrentTargetPage(0) // Reset to first page when searching
                                                                 }}
                                                                 className="bg-white border-2 border-gray-300 text-black placeholder-gray-500 font-nosifer text-sm"
+                                                                autoFocus={false}
                                                             />
-                                                            {searchTokenId && (
-                                                                <div className="text-xs text-gray-600 text-center font-nosifer">
-                                                                    Found {filteredTargets.length} target{filteredTargets.length !== 1 ? 's' : ''}
-                                                                </div>
-                                                            )}
+                                                        
                                                         </div>
 
                                                         {filteredTargets.length === 0 ? (
@@ -805,23 +822,26 @@ export default function NightmarePage() {
             {/* Result Modal */}
             <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
                 <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className={`text-3xl font-nosifer text-center ${
-                            actionResult?.success ? 'text-black' : 'text-red-900'
-                        }`}>
-                            {actionResult?.success ? '🩸 SUCCESS! 🩸' : '💀 FAILED! 💀'}
-                        </DialogTitle>
-                    </DialogHeader>
+                    {/* Only show DialogHeader if not a hide failure */}
+                    {!(actionResult && actionResult.type === "hide" && actionResult.hideSucceeded === false) && (
+                        <DialogHeader>
+                            <DialogTitle className={`text-3xl font-nosifer text-center ${
+                                actionResult?.success ? 'text-white' : 'text-red-900'
+                            }`}>
+                                {actionResult?.success ? '🩸 SUCCESS! 🩸' : '💀 FAILED! 💀'}
+                            </DialogTitle>
+                        </DialogHeader>
+                    )}
                     
                     {actionResult && (
                         <div className="space-y-6 text-center">
-                            <div className="text-black font-nosifer text-lg">
+                            <div className="text-white font-nosifer text-lg">
                                 {actionResult.message}
                             </div>
                             
                             {actionResult.success ? (
                                 <div className="space-y-3">
-                                    <div className="text-black font-nosifer">
+                                    <div className="text-white font-nosifer">
                                         {actionResult.type === "attack" 
                                             ? `Pepurge #${actionResult.pepurgeTokenId} attacked Pepurge #${actionResult.targetTokenId}!`
                                             : ``
@@ -835,6 +855,13 @@ export default function NightmarePage() {
                                                         <>
                                                             <p>🗡️ TARGET KILLED!</p>
                                                             <p>💀 Pepurge #{actionResult.targetTokenId} has been eliminated!</p>
+                                                            <p className="text-green-400 font-bold">
+                                                                {mintPrice !== "0.0" && (
+                                                                    <>
+                                                                        {`+${(Number(mintPrice) * 0.5).toFixed(6)} ETH received`}
+                                                                    </>
+                                                                )}
+                                                            </p>
                                                             {actionResult.damage !== undefined && (
                                                                 <p>⚔️ Damage Dealt: {actionResult.damage}</p>
                                                             )}
@@ -886,7 +913,7 @@ export default function NightmarePage() {
                                 onClick={() => setShowResultModal(false)}
                                 className="w-full bg-black text-[#b31c1e] hover:bg-gray-800 font-nosifer py-3 border-2 border-black"
                             >
-                                RETURN TO DARKNESS
+                                CLOSE
                             </Button>
                         </div>
                     )}
