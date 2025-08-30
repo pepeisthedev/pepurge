@@ -11,7 +11,10 @@ import {
     Zap,
     Ghost,
     Coins,
-    Sparkles
+    Sparkles,
+    Heart,
+    Sword,
+    Shield
 } from "lucide-react"
 import pepurgeAbi from "../assets/abis/Pepurge.json"
 
@@ -29,6 +32,10 @@ export default function MintPage() {
         message: string
         tokenId?: string
         transactionHash?: string
+        pepeType?: number
+        attack?: number
+        defense?: number
+        maxHP?: number
     } | null>(null)
     
     const [totalSupply, setTotalSupply] = useState<number>(0)
@@ -121,18 +128,60 @@ export default function MintPage() {
             try {
                 const receipt = await tx.wait()
                 
-                // Try to extract token ID from events
+                // Try to extract token ID and stats from events
                 let tokenId = "Unknown"
+                let pepeType: number | undefined
+                let attack: number | undefined
+                let defense: number | undefined
+                let maxHP: number | undefined
+              //  console.log("Transaction receipt:", receipt)
+
                 if (receipt.logs && receipt.logs.length > 0) {
+                    console.log("Total logs found:", receipt.logs.length)
                     for (const log of receipt.logs) {
                         try {
                             const parsedLog = contract.interface.parseLog(log)
-                            if (parsedLog && parsedLog.name === "Transfer" && parsedLog.args) {
-                                tokenId = parsedLog.args.tokenId?.toString() || "Unknown"
+                            console.log("Parsed log:", parsedLog?.name, parsedLog?.args)
+                            if (parsedLog && parsedLog.name === "TokenMinted" && parsedLog.args) {
+                                console.log("Full TokenMinted args:", parsedLog.args)
+                                console.log("Args length:", parsedLog.args.length)
+                                console.log("Individual args:", {
+                                    arg0: parsedLog.args[0],
+                                    arg1: parsedLog.args[1], 
+                                    arg2: parsedLog.args[2],
+                                    arg3: parsedLog.args[3],
+                                    arg4: parsedLog.args[4]
+                                })
+                                
+                                tokenId = parsedLog.args.tokenId?.toString() || parsedLog.args[0]?.toString() || "Unknown"
+                                pepeType = Number(parsedLog.args.pepeType || parsedLog.args[1])
+                                attack = Number(parsedLog.args.attack || parsedLog.args[2])
+                                defense = Number(parsedLog.args.defense || parsedLog.args[3])
+                                maxHP = Number(parsedLog.args.maxHP || parsedLog.args[4])
+                                console.log("TokenMinted event extracted:", { tokenId, pepeType, attack, defense, maxHP })
                                 break
                             }
                         } catch (e) {
+                            console.log("Failed to parse log:", e)
                             // Continue looking for the right log
+                        }
+                    }
+                    
+                    // If TokenMinted event wasn't found, fallback to Transfer event for tokenId
+                    if (tokenId === "Unknown") {
+                        console.log("TokenMinted event not found, looking for Transfer event...")
+                        for (const log of receipt.logs) {
+                            try {
+                                const parsedLog = contract.interface.parseLog(log)
+                                console.log("Checking Transfer event:", parsedLog?.name)
+                                if (parsedLog && parsedLog.name === "Transfer" && parsedLog.args) {
+                                    tokenId = parsedLog.args.tokenId?.toString() || parsedLog.args[2]?.toString() || "Unknown"
+                                    console.log("Found Transfer event with tokenId:", tokenId)
+                                    break
+                                }
+                            } catch (e) {
+                                console.log("Failed to parse Transfer log:", e)
+                            }
                         }
                     }
                 }
@@ -141,7 +190,11 @@ export default function MintPage() {
                     success: true,
                     message: "PEPURGE SUMMONED SUCCESSFULLY!",
                     tokenId: tokenId,
-                    transactionHash: tx.hash
+                    transactionHash: tx.hash,
+                    pepeType: pepeType,
+                    attack: attack,
+                    defense: defense,
+                    maxHP: maxHP
                 })
                 
                 // Refresh contract info to update total supply
@@ -369,8 +422,46 @@ export default function MintPage() {
                                         // Success completed
                                         <>
                                             {mintResult.tokenId !== "Unknown" && (
-                                                <div className="text-green-100 font-bold text-xl">
-                                                    Pepurge #{mintResult.tokenId}
+                                                <div className="space-y-4">
+                                                    <div className="text-green-100 font-bold text-xl">
+                                                        Pepurge #{mintResult.tokenId}
+                                                    </div>
+                                                    
+                                                    {/* Pepurge Image and Stats */}
+                                                    {mintResult.pepeType !== undefined && (
+                                                        <div className="space-y-3">
+                                                            <div className="w-32 h-32 mx-auto border-2 border-green-400 rounded-lg overflow-hidden">
+                                                                <img 
+                                                                    src={`/pepes/${Number(mintResult.pepeType)}.png`}
+                                                                    alt={`Pepurge Type ${mintResult.pepeType}`}
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={(e) => {
+                                                                        console.log("Image failed to load:", `/pepes/${Number(mintResult.pepeType)}.png`)
+                                                                        e.currentTarget.src = "/C1.png" // Fallback image
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            
+                                                            {/* Stats Display */}
+                                                            <div className="grid grid-cols-3 gap-2 max-w-xs mx-auto">
+                                                                <div className="bg-red-800 border border-red-600 p-2 rounded text-center">
+                                                                    <Heart className="w-4 h-4 mx-auto mb-1 text-red-300" />
+                                                                    <div className="text-red-100 text-sm font-bold">{mintResult.maxHP}</div>
+                                                                    <div className="text-red-300 text-xs">HP</div>
+                                                                </div>
+                                                                <div className="bg-orange-800 border border-orange-600 p-2 rounded text-center">
+                                                                    <Sword className="w-4 h-4 mx-auto mb-1 text-orange-300" />
+                                                                    <div className="text-orange-100 text-sm font-bold">{mintResult.attack}</div>
+                                                                    <div className="text-orange-300 text-xs">ATK</div>
+                                                                </div>
+                                                                <div className="bg-blue-800 border border-blue-600 p-2 rounded text-center">
+                                                                    <Shield className="w-4 h-4 mx-auto mb-1 text-blue-300" />
+                                                                    <div className="text-blue-100 text-sm font-bold">{mintResult.defense}</div>
+                                                                    <div className="text-blue-300 text-xs">DEF</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                             <div className="bg-red-900 border-2 border-green-600 p-4 rounded">
