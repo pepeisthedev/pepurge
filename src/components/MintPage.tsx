@@ -329,37 +329,24 @@ export default function MintPage() {
                         </div>
 
                         {/* Contract Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-8">
-                            <div className="bg-red-900 border-2 border-red-600 p-4 rounded">
+                            <div className="bg-red-900 border-2 border-red-600 rounded">
                                 <div className="text-red-200 text-sm font-bold mb-1">MINT PRICE</div>
                                 <div className="text-2xl font-bold text-red-100 flex items-center justify-center">
                                     {mintPrice} ETH
                                 </div>
                             </div>
                             
-                            <div className="bg-red-900 border-2 border-red-600 p-4 rounded">
-                                <div className="text-red-200 text-sm font-bold mb-1">TOTAL SUMMONED</div>
-                                <div className="text-2xl font-bold text-red-100 flex items-center justify-center">
-                                    {totalSupply}
-                                </div>
-                            </div>
+                           
                             
-                        
-                                <div className="bg-red-900 border-2 border-red-600 p-4 rounded">
-                                    <div className="text-red-200 text-sm font-bold mb-1">MAX SUPPLY</div>
-                                    <div className="text-2xl font-bold text-red-100 flex items-center justify-center">
-                                        10000
-                                    </div>
-                                </div>
+                       
                          
-                        </div>
-
+    
                         {/* Mint Button */}
                         <div className="space-y-4">
                             <Button
                                 onClick={handleMint}
                                 disabled={isMinting || !collectionMinting}
-                                className="w-full bg-[#b31c1e] hover:bg-red-700 text-white hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
+                                className="w-full bg-[#b31c1e] hover:bg-red-700 text-white hover:text-white font-bold py-4 md:py-6 px-4 md:px-12 text-lg md:text-2xl border-4 border-black shadow-2xl border-red-600  transform hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none animate-pulse"
                             >
                                 {isMinting ? (
                                     <>
