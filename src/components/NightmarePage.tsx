@@ -82,6 +82,13 @@ export default function NightmarePage() {
     } | null>(null)
     const [canCall, setCanCall] = useState<boolean>(true);
     const [collectionMinting, setCollectionMinting] = useState<boolean>(false);
+    const [showBatchLoadingModal, setShowBatchLoadingModal] = useState<boolean>(false);
+    const [batchProgress, setBatchProgress] = useState<{
+        currentBatch: number;
+        totalBatches: number;
+        processedTokens: number;
+        totalTokens: number;
+    }>({ currentBatch: 0, totalBatches: 0, processedTokens: 0, totalTokens: 0 });
 
     // Fetch mint price for reward display
     useEffect(() => {
@@ -209,44 +216,183 @@ export default function NightmarePage() {
         }
     }
 
+    // Fetch all tokenIds from 0 to totalMinted-1, then for each, fetch HP, hidden, timestamp, etc.
     const fetchAvailableTargets = async () => {
         try {
             if (!walletProvider) return
 
             const ethersProvider = new ethers.BrowserProvider(walletProvider as ethers.Eip1193Provider)
             const contract = new ethers.Contract(pepurgeContractAddress, pepurgeAbi, ethersProvider)
-            
-            const result = await contract.aliveAndNotHiddenPepes()
-            const [tokenIds, types, hps, timestamps, attacks, defenses, maxHps] = result
 
-            const targets: TargetPepurge[] = []
-            const userTokenIds = userPepurges.map(p => p.tokenId)
-            
-            for (let i = 0; i < tokenIds.length; i++) {
-                const tokenId = tokenIds[i].toString()
-                
-                // Filter out tokens owned by the current user
-                if (!userTokenIds.includes(tokenId)) {
-                    targets.push({
-                        tokenId: tokenId,
-                        type: Number(types[i]),
-                        hp: Number(hps[i]),
-                        maxHp: Number(maxHps[i]),
-                        attack: Number(attacks[i]),
-                        defense: Number(defenses[i]),
-                        lastActionTimestamp: Number(timestamps[i]),
-                        imageUrl: `/pepes/${Number(types[i])}.png`
-                    })
+            // Get total minted
+            let totalMinted = 0
+            try {
+                totalMinted = Number(await contract.totalMinted())
+            } catch (e) {
+                // fallback: try totalSupply
+                try {
+                    totalMinted = Number(await contract.totalSupply())
+                } catch (e2) {
+                    totalMinted = 0
                 }
             }
+            if (totalMinted === 0) {
+                setAvailableTargets([])
+                setRandomizedTargets([])
+                return
+            }
+
+            // Show loading modal and initialize progress
+            setShowBatchLoadingModal(true)
+            const BATCH_SIZE = 10
+            const totalBatches = Math.ceil(totalMinted / BATCH_SIZE)
+            setBatchProgress({
+                currentBatch: 0,
+                totalBatches,
+                processedTokens: 0,
+                totalTokens: totalMinted
+            })
+
+            // Prepare array of tokenIds
+            const tokenIds = Array.from({ length: totalMinted }, (_, i) => i)
+            const userTokenIds = userPepurges.map(p => p.tokenId)
+            const now = Math.floor(Date.now() / 1000)
+            const TWELVE_HOURS = 12 * 60 * 60
+
+            // Helper function to parse tokenURI metadata
+            const parseTokenMetadata = (tokenURI: string) => {
+                try {
+                    // Remove data URI prefix if present
+                    const base64Data = tokenURI.replace(/^data:application\/json;base64,/, '')
+                    const jsonString = atob(base64Data)
+                    const metadata = JSON.parse(jsonString)
+                    
+                    // Extract attributes
+                    const attributes = metadata.attributes || []
+                    const getAttributeValue = (traitType: string) => {
+                        const attr = attributes.find((a: any) => a.trait_type === traitType)
+                        return attr ? Number(attr.value) : 0
+                    }
+
+                    return {
+                        type: getAttributeValue('type'),
+                        attack: getAttributeValue('Attack'),
+                        HP: getAttributeValue('HP'),
+                        defense: getAttributeValue('Defense'),
+                        maxHp: getAttributeValue('Max HP')
+                    }
+                } catch (e) {
+                    console.error('Error parsing token metadata:', e)
+                    return { type: 0, attack: 0, HP: 0, defense: 0, maxHp: 0 }
+                }
+            }
+
+            // Helper function with retry logic for individual token
+            const fetchTokenDataWithRetry = async (tokenId: number, maxRetries = 3): Promise<any> => {
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        // Fetch basic stats and metadata
+                        const [hidden, timestamp, tokenURI] = await Promise.all([
+                            contract.hidden(tokenId),
+                            contract.timestamp(tokenId),
+                            contract.tokenURI(tokenId)
+                        ])
+
+                        // Parse metadata from tokenURI
+                        const metadata = parseTokenMetadata(tokenURI)
+                        
+                        return {
+                            tokenId: tokenId.toString(),
+                            type: metadata.type,
+                            hp: Number(metadata.HP),
+                            maxHp: metadata.maxHp,
+                            attack: metadata.attack,
+                            defense: metadata.defense,
+                            isHidden: Boolean(hidden),
+                            lastActionTimestamp: Number(timestamp),
+                            imageUrl: `/pepes/${metadata.type}.png`
+                        }
+                    } catch (e) {
+                        console.error(`Attempt ${attempt} failed for token ${tokenId}:`, e)
+                        if (attempt === maxRetries) {
+                            console.error(`All attempts failed for token ${tokenId}`)
+                            return null
+                        }
+                        // Wait before retry (exponential backoff)
+                        await new Promise(resolve => setTimeout(resolve, attempt * 1000))
+                    }
+                }
+                return null
+            }
+
+            // Process tokens in batches to avoid rate limits
+            const pepeData: any[] = []
             
+            for (let i = 0; i < tokenIds.length; i += BATCH_SIZE) {
+                const batch = tokenIds.slice(i, i + BATCH_SIZE)
+                const currentBatchNum = Math.floor(i / BATCH_SIZE) + 1
+                
+                // Update progress
+                setBatchProgress(prev => ({
+                    ...prev,
+                    currentBatch: currentBatchNum,
+                    processedTokens: i
+                }))
+                
+                console.log(`Fetching batch ${currentBatchNum}/${totalBatches}`)
+                
+                const batchResults = await Promise.all(
+                    batch.map(tokenId => fetchTokenDataWithRetry(tokenId))
+                )
+                
+                pepeData.push(...batchResults)
+                
+                // Add delay between batches to respect rate limits
+                if (i + BATCH_SIZE < tokenIds.length) {
+                    await new Promise(resolve => setTimeout(resolve, 500)) // 500ms delay between batches
+                }
+            }
+
+            // Final progress update
+            setBatchProgress(prev => ({
+                ...prev,
+                processedTokens: totalMinted,
+                currentBatch: totalBatches
+            }))
+
+            // Filter out nulls, dead, and own pepes, then map to TargetPepurge
+            const targets: TargetPepurge[] = pepeData
+                .filter((pepe): pepe is NonNullable<typeof pepe> => pepe !== null)
+                .filter((pepe) => {
+                    if (userTokenIds.includes(pepe.tokenId)) return false
+                    if (pepe.hp <= 0) return false
+                    // Only attackable if not hidden, or hidden but cooldown passed
+                    if (pepe.isHidden) {
+                        const timeSinceLastAction = now - pepe.lastActionTimestamp
+                        if (timeSinceLastAction < TWELVE_HOURS) return false
+                    }
+                    return true
+                })
+                .map((pepe) => ({
+                    tokenId: pepe.tokenId,
+                    type: pepe.type,
+                    hp: pepe.hp,
+                    maxHp: pepe.maxHp,
+                    attack: pepe.attack,
+                    defense: pepe.defense,
+                    lastActionTimestamp: pepe.lastActionTimestamp,
+                    imageUrl: pepe.imageUrl
+                }))
+
             setAvailableTargets(targets)
-            
             // Randomize targets for pagination
             const shuffled = [...targets].sort(() => Math.random() - 0.5)
             setRandomizedTargets(shuffled)
         } catch (error) {
             console.error("Error fetching available targets:", error)
+        } finally {
+            // Hide loading modal
+            setShowBatchLoadingModal(false)
         }
     }
 
@@ -522,23 +668,37 @@ export default function NightmarePage() {
                                                 <span className="hidden md:inline">PEPURGE </span>#{pepurge.tokenId}
                                             </div>
 
-                                            {/* Status */}
-                                            {pepurge.isHidden ? (
-                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-purple-900 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                    <EyeOff className="text-purple-300 w-3 h-3 md:w-5 md:h-5" />
-                                                    <span className="text-purple-300 font-nosifer text-xs md:text-sm">HIDDEN</span>
-                                                </div>
-                                            ) : pepurge.hp === 0 ? (
-                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-800 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                    <Skull className="text-gray-400 w-3 h-3 md:w-5 md:h-5" />
-                                                    <span className="text-gray-400 font-nosifer text-xs md:text-sm">DEAD</span>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-red-900 py-1 md:py-2 px-2 md:px-4 rounded">
-                                                    <Eye className="text-red-300 w-3 h-3 md:w-5 md:h-5" />
-                                                    <span className="text-red-300 font-nosifer text-xs md:text-sm">EXPOSED</span>
-                                                </div>
-                                            )}
+                                            {/* Status: HIDDEN only if hidden and cooldown not passed */}
+                                            {(() => {
+                                                if (pepurge.isHidden) {
+                                                    const now = Math.floor(Date.now() / 1000)
+                                                    const TWELVE_HOURS = 12 * 60 * 60
+                                                    const timeSinceLastAction = now - pepurge.lastActionTimestamp
+                                                    if (timeSinceLastAction < TWELVE_HOURS) {
+                                                        return (
+                                                            <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-purple-900 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                                <EyeOff className="text-purple-300 w-3 h-3 md:w-5 md:h-5" />
+                                                                <span className="text-purple-300 font-nosifer text-xs md:text-sm">HIDDEN</span>
+                                                            </div>
+                                                        )
+                                                    }
+                                                }
+                                                if (pepurge.hp === 0) {
+                                                    return (
+                                                        <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-gray-800 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                            <Skull className="text-gray-400 w-3 h-3 md:w-5 md:h-5" />
+                                                            <span className="text-gray-400 font-nosifer text-xs md:text-sm">DEAD</span>
+                                                        </div>
+                                                    )
+                                                }
+                                                // Default: EXPOSED
+                                                return (
+                                                    <div className="flex items-center justify-center space-x-1 md:space-x-2 bg-red-900 py-1 md:py-2 px-2 md:px-4 rounded">
+                                                        <Eye className="text-red-300 w-3 h-3 md:w-5 md:h-5" />
+                                                        <span className="text-red-300 font-nosifer text-xs md:text-sm">EXPOSED</span>
+                                                    </div>
+                                                )
+                                            })()}
                                             
                                             {/* Stats */}
                                             <div className="grid grid-cols-3 gap-1 md:gap-2 text-xs md:text-sm">
@@ -572,9 +732,23 @@ export default function NightmarePage() {
                                                 <div className="flex flex-col md:flex-row space-y-1 md:space-y-0 md:space-x-2 pt-1 md:pt-2">
                                                     <Button
                                                         onClick={() => openActionModal(pepurge, "attack")}
-                                                        disabled={pepurge.isHidden || !pepurge.canAct || !canCall}
+                                                        disabled={(() => {
+                                                            if (!pepurge.canAct || !canCall) return true;
+                                                            if (pepurge.isHidden) {
+                                                                const now = Math.floor(Date.now() / 1000);
+                                                                const TWELVE_HOURS = 12 * 60 * 60;
+                                                                const timeSinceLastAction = now - pepurge.lastActionTimestamp;
+                                                                if (timeSinceLastAction < TWELVE_HOURS) return true;
+                                                            }
+                                                            return false;
+                                                        })()}
                                                         className={`flex-1 py-1 md:py-2 px-2 md:px-3 border-2 text-xs md:text-sm font-nosifer ${
-                                                            pepurge.isHidden || !pepurge.canAct || !canCall
+                                                            (!pepurge.canAct || !canCall || (pepurge.isHidden && (() => {
+                                                                const now = Math.floor(Date.now() / 1000);
+                                                                const TWELVE_HOURS = 12 * 60 * 60;
+                                                                const timeSinceLastAction = now - pepurge.lastActionTimestamp;
+                                                                return timeSinceLastAction < TWELVE_HOURS;
+                                                            })()))
                                                                 ? 'bg-gray-500 hover:bg-gray-500 text-gray-300 border-gray-400 cursor-not-allowed'
                                                                 : 'bg-red-600 hover:bg-red-700 text-white border-red-400'
                                                         }`}
@@ -954,6 +1128,57 @@ export default function NightmarePage() {
                             </Button>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Batch Loading Modal */}
+            <Dialog open={showBatchLoadingModal} onOpenChange={() => {}}>
+                <DialogContent className="bg-[#b31c1e] border-4 border-black max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-3xl font-nosifer text-white text-center">
+                            🩸 SUMMONING TARGETS 🩸
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    <div className="space-y-6 text-center">
+                        <div className="text-white font-nosifer text-lg">
+                            SCANNING THE BATTLEFIELD...
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* Progress Bar */}
+                            <div className="bg-black border-2 border-red-800 rounded-lg p-4">
+                                <div className="flex justify-between text-sm text-white font-nosifer mb-2">
+                                    <span>BATCH {batchProgress.currentBatch} / {batchProgress.totalBatches}</span>
+                                    <span>{batchProgress.processedTokens} / {batchProgress.totalTokens}</span>
+                                </div>
+                                <div className="w-full bg-red-900 rounded-full h-4 border border-red-600">
+                                    <div 
+                                        className="bg-gradient-to-r from-red-500 to-red-400 h-full rounded-full transition-all duration-300 ease-out"
+                                        style={{ 
+                                            width: `${batchProgress.totalTokens > 0 ? (batchProgress.processedTokens / batchProgress.totalTokens) * 100 : 0}%` 
+                                        }}
+                                    ></div>
+                                </div>
+                                <div className="text-center text-white font-nosifer text-sm mt-2">
+                                    {batchProgress.totalTokens > 0 ? Math.round((batchProgress.processedTokens / batchProgress.totalTokens) * 100) : 0}%
+                                </div>
+                            </div>
+
+                            {/* Animated skull */}
+                            <div className="flex justify-center">
+                                <Skull className="w-12 h-12 text-white animate-pulse" />
+                            </div>
+
+                            <div className="bg-black border-2 border-red-800 p-4 rounded">
+                                <div className="text-[#b31c1e] text-sm space-y-1 font-nosifer">
+                                    <p>• FETCHING TOKEN METADATA</p>
+                                    <p>• ANALYZING BATTLE STATUS</p>
+                                    <p>• IDENTIFYING TARGETS</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>
