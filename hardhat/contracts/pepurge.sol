@@ -61,15 +61,14 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
         bool killed
     );
 
-    uint256 public collect = 10000;
+    uint256 public aliveCount = 10000;
     uint256 public mintPrice = 0.00025 ether;
-    string public CID =
+    string public ipfsBaseURI =
         "ipfs://bafybeihbso5n53jblaianewxlwtyg75cszy5aqbfu7fa3otvurzbzprdmi/";
     uint256 public supply = 10000;
     uint256 public coolDown = 43200;
-    uint256 public whenCollect = 10;
+    uint256 public endGameThreshold = 10;
 
-    //uint16 iniNum = 3333;
     uint256 private randomNonce;
     uint256 private _tokenIdCounter;
 
@@ -106,7 +105,7 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
                         '",',
                         '"description": "Kill everyone",',
                         '"image": "',
-                        CID,
+                        ipfsBaseURI,
                         "",
                         Strings.toString(pepeType[tokenId]),
                         '.png",',
@@ -130,20 +129,28 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
         return string(abi.encodePacked(_baseURI(), json));
     }
 
-    function setting1(
-        uint256 _supply,
-        uint256 _mintPrice,
-        string memory _CID,
-        uint256 _coolDown,
-        uint _whenColl,
-        uint256 _collect
-    ) public onlyOwner {
+    function setSupply(uint256 _supply) public onlyOwner {
         supply = _supply;
+    }
+
+    function setMintPrice(uint256 _mintPrice) public onlyOwner {
         mintPrice = _mintPrice;
-        CID = _CID;
+    }
+
+    function setIpfsBaseURI(string memory _ipfsBaseURI) public onlyOwner {
+        ipfsBaseURI = _ipfsBaseURI;
+    }
+
+    function setCoolDown(uint256 _coolDown) public onlyOwner {
         coolDown = _coolDown;
-        whenCollect = _whenColl;
-        collect = _collect;
+    }
+
+    function setEndGameThreshold(uint256 _endGameThreshold) public onlyOwner {
+        endGameThreshold = _endGameThreshold;
+    }
+
+    function setAliveCount(uint256 _aliveCount) public onlyOwner {
+        aliveCount = _aliveCount;
     }
 
     function mint() public payable nonReentrant {
@@ -193,11 +200,9 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
         require(ownerOf(yourTokenId) == msg.sender, "Not your Pepurge");
         require(_tokenIdCounter >= supply, "Collection still minting");
         require(msg.sender == tx.origin, "No smart contracts");
-        require(collect >= whenCollect, "Game is over");
+        require(aliveCount >= endGameThreshold, "Game is over");
         require(HP[victimTokenID] > 0, "Victim is already dead");
-        if ((timestamp[victimTokenID] < (block.timestamp - coolDown))) {
-            require(!isHidden(victimTokenID), "Victim is hidden");
-        }
+        require(!isHidden(victimTokenID), "Victim is hidden");
         require(timestamp[yourTokenId] < (block.timestamp - coolDown), "Your Pepurge is on cooldown");
         
         uint256 victimHPBefore = HP[victimTokenID];
@@ -220,7 +225,7 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
             victimHPAfter = 0;
             killed = true;
             _burn(victimTokenID);
-            collect = collect - 1;
+            aliveCount = aliveCount - 1;
             payable(msg.sender).transfer(mintPrice / 2);
         } else {
             HP[victimTokenID] = HP[victimTokenID] - totalDamage;
@@ -241,7 +246,7 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
     }
 
     function cashIn(uint256 _tokenID) external nonReentrant {
-        require(collect <= whenCollect, "Game is still running");
+        require(aliveCount <= endGameThreshold, "Game is still running");
         require(msg.sender == ownerOf(_tokenID), "Not token owner");
         require(msg.sender == tx.origin, "No smart contracts");
         payable(msg.sender).transfer((mintPrice * supply * 4) / 100);
