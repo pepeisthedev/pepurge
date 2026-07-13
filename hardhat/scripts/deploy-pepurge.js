@@ -1,133 +1,125 @@
-const { ethers } = require("hardhat");
+const fs = require("fs");
+const path = require("path");
 const hre = require("hardhat");
 
+const CANONICAL_SEADROP = "0x00005EA00Ac477B1030CE78506496e8C2dE24bf5";
+const STRICT_ROYALTY_VALIDATOR =
+    "0xA000027A9B2802E1ddf7000061001e5c005A0000";
+const MAINNET_COOLDOWN_SECONDS = 12 * 60 * 60;
+
+async function requireCode(address, label) {
+    const code = await hre.ethers.provider.getCode(address);
+    if (code === "0x") throw new Error(`${label} has no code at ${address}.`);
+}
+
 async function main() {
-    console.log("Starting PEPURGE deployment and testing...");
-    
-    const [deployer] = await ethers.getSigners();
-    console.log("Deploying contracts with account:", await deployer.getAddress());
-    console.log("Account nonce:", await deployer.getNonce());
-    console.log("Network:", await ethers.provider.getNetwork());
-   
-/*    const Stats = await ethers.getContractFactory("contracts/tmp/statsv2_v2.sol:Stats");
+    const [deployer] = await hre.ethers.getSigners();
+    const network = await hre.ethers.provider.getNetwork();
+    const isLocal = network.chainId === 31337n;
+    const collectionSize = Number(process.env.COLLECTION_SIZE || "10000");
+    const mintPrice = hre.ethers.parseEther(
+        process.env.MINT_PRICE_ETH || "0.00025",
+    );
+    const cooldown = isLocal
+        ? Number(process.env.COOLDOWN_SECONDS || "43200")
+        : MAINNET_COOLDOWN_SECONDS;
+    const endGameThreshold = Number(process.env.END_GAME_THRESHOLD || "10");
+    const seaDrop = process.env.SEADROP_ADDRESS || CANONICAL_SEADROP;
+
+    if (!isLocal) {
+        if (network.chainId !== 4663n && network.chainId !== 46630n) {
+            throw new Error(`Unsupported deployment chain ${network.chainId}.`);
+        }
+        await requireCode(seaDrop, "SeaDrop");
+        await requireCode(STRICT_ROYALTY_VALIDATOR, "Royalty validator");
+    }
+
+    console.log("Network:", hre.network.name, network.chainId.toString());
+    console.log("Deployer and royalty receiver:", deployer.address);
+
+    const Stats = await hre.ethers.getContractFactory("Stats");
     const stats = await Stats.deploy();
     await stats.waitForDeployment();
-    console.log("Stats deployed to:", await stats.getAddress());
-    if (network.name !== "localhost") {
-        const deploymentTx = stats.deploymentTransaction();
-        if (deploymentTx) {
-            console.log("Waiting for stats deployment...");
-            await deploymentTx.wait(2);
-        }
-    }
 
-    // Initialize Stats with some test data
-    console.log("\n--- Initializing Stats with test data ---");
-    
-    // Add attack values for types 0-23 (24 total)
-    const attackValues = [0,5,6,7,9,1,8,8,7,1,7,1,10,8,1,6,8,3,5,8,3,7,8,2];
-    await (await stats.addMeta(attackValues)).wait(); // Wait for confirmation
-    
-    // Add defense values for types 0-23 (24 total)  
-    const defenseValues = [0,5,4,8,3,2,6,5,3,1,2,1,7,5,1,8,6,5,5,5,4,4,3,3];
-    await (await stats.adddef(defenseValues)).wait(); // Wait for confirmation
-    
-    // Add max HP values for types 0-23 (24 total)
-    const maxHpValues = [0,7,7,10,5,5,7,8,5,3,4,5,6,7,5,10,7,7,7,7,6,6,7,5];
-    await (await stats.addmaxhp(maxHpValues)).wait(); // Wait for confirmation
-    
-    console.log("Stats initialized with test data");
+    const Renderer = await hre.ethers.getContractFactory("PepurgeRenderer");
+    const renderer = await Renderer.deploy(await stats.getAddress());
+    await renderer.waitForDeployment();
 
-    // Debug: Check array lengths after initialization
-   
-*/
-    // Deploy PEPURGE contract
-    console.log("\n--- Deploying PEPURGE Contract ---");
-    const PEPURGE = await ethers.getContractFactory("contracts/tmp/pepurgewizv4.sol:PEPURGE");
-    const pepurge = await PEPURGE.deploy(
-        await deployer.getAddress(), // royalty receiver
-        1000, // 10% royalty (1000/10000)
-        "Pepurge", // name
-        "PPG" // symbol
+    const Pepurge = await hre.ethers.getContractFactory("PEPURGE");
+    const pepurge = await Pepurge.deploy(
+        await stats.getAddress(),
+        await renderer.getAddress(),
+        collectionSize,
+        mintPrice,
+        cooldown,
+        endGameThreshold,
+        [seaDrop],
     );
     await pepurge.waitForDeployment();
-    if (network.name !== "localhost") {
-        const deploymentTx = pepurge.deploymentTransaction();
-        if (deploymentTx) {
-            console.log("Waiting for pepurge deployment...");
-            await deploymentTx.wait(2);
-        }
+
+    const contractAddress = await pepurge.getAddress();
+    if (!isLocal) {
+        const tx = await pepurge.updateCreatorPayoutAddress(
+            seaDrop,
+            contractAddress,
+        );
+        await tx.wait();
     }
-    console.log("PEPURGE deployed to:", await pepurge.getAddress());
-    
-    // Verify contracts on non-localhost networks
-    if (network.name !== "localhost" && network.chainId !== 31337n) {
-        console.log("\n--- Verifying Contracts ---");
-        
-        // Wait a bit for the contract to be indexed
-        console.log("Waiting for contract indexing...");
-        await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
-        
-        try {
-            // Verify Stats contract
-            console.log("Verifying Stats contract...");
-            await hre.run("verify:verify", {
-                address: await stats.getAddress(),
-                constructorArguments: []
-            });
-            console.log("Stats contract verified!");
-        } catch (error) {
-            console.log("Stats verification failed:", error.message);
-        }
-        
-        try {
-            // Verify PEPURGE contract
-            console.log("Verifying PEPURGE contract...");
-            await hre.run("verify:verify", {
-                address: await pepurge.getAddress(),
-                constructorArguments: [
-                    await deployer.getAddress(), // royaltyReceiver_
-                    1000, // royaltyFeeNumerator_ (10%)
-                    "Pepurge", // name_
-                    "PPG" // symbol_
-                ]
-            });
-            console.log("PEPURGE contract verified!");
-        } catch (error) {
-            console.log("PEPURGE verification failed:", error.message);
-        }
+
+    const output = {
+        network: hre.network.name,
+        chainId: network.chainId.toString(),
+        deployer: deployer.address,
+        royaltyReceiver: deployer.address,
+        royaltyBps: 1000,
+        statsAddress: await stats.getAddress(),
+        rendererAddress: await renderer.getAddress(),
+        contractAddress,
+        seaDropAddress: seaDrop,
+        strictRoyaltyValidator: STRICT_ROYALTY_VALIDATOR,
+        collectionSize,
+        mintPriceWei: mintPrice.toString(),
+        cooldown,
+        endGameThreshold,
+        gameActivated: false,
+    };
+
+    const directory = path.join(__dirname, "..", "deployments");
+    fs.mkdirSync(directory, { recursive: true });
+    const outputPath = path.join(directory, `${network.chainId}.json`);
+    fs.writeFileSync(outputPath, `${JSON.stringify(output, null, 2)}\n`);
+
+    console.log("Stats:", output.statsAddress);
+    console.log("Renderer:", output.rendererAddress);
+    console.log("PEPURGE:", contractAddress);
+    console.log("Deployment state:", outputPath);
+
+    if (!isLocal && process.env.VERIFY_CONTRACTS === "true") {
+        await hre.run("verify:verify", {
+            address: output.statsAddress,
+            constructorArguments: [],
+        });
+        await hre.run("verify:verify", {
+            address: output.rendererAddress,
+            constructorArguments: [output.statsAddress],
+        });
+        await hre.run("verify:verify", {
+            address: contractAddress,
+            constructorArguments: [
+                output.statsAddress,
+                output.rendererAddress,
+                collectionSize,
+                mintPrice,
+                cooldown,
+                endGameThreshold,
+                [seaDrop],
+            ],
+        });
+        console.log("Contracts verified on Robinhood Blockscout.");
     }
-    
-    // Set the Stats contract address
-    console.log("\n--- Setting Stats Contract ---");
-    await pepurge.setCon("0xe9096ec234e2D15f2Cf6bc6c9cbD8e8A1dc4bd45");
-    console.log("Stats contract set successfully");
-  
-    // Debug contract state
-    console.log("\n--- Contract State Debug ---");
-    console.log("Mint price:", await pepurge.mintPrice());
-    console.log("Supply:", await pepurge.supply());
-    console.log("Current token counter:", await pepurge.totalMinted());
-    
-    console.log("Final nonce:", await deployer.getNonce());
+}
 
-    // Test totalMinted function
-    console.log("\n--- Testing totalMinted function ---");
-    const totalMinted = await pepurge.totalMinted();
-    console.log("Total minted tokens:", totalMinted.toString());
-
-    // Test minting
-    console.log("\n--- Testing Mint Function ---");
-    const mintPrice = await pepurge.mintPrice();
-    console.log("Attempting to mint with price:", ethers.formatEther(mintPrice), "ETH");
-    
-   
-
-    console.log("\n--- Script completed successfully! ---");}
-
-main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    });
+main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

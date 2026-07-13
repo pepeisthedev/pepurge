@@ -1,48 +1,115 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
+pragma solidity 0.8.17;
 
-import {ERC721AC} from "@limitbreak/creator-token-standards/src/erc721c/ERC721AC.sol";
-import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../utils/BasicRoyalties.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Base64.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
+import {ERC721SeaDrop} from "seadrop/ERC721SeaDrop.sol";
 
-interface Stats {
-    function attRead(uint _type) external view returns (uint256);
+interface IPepurgeStats {
+    function attRead(uint256 pepeType) external view returns (uint256);
 
-    function defRead(uint _type) external view returns (uint256);
+    function defRead(uint256 pepeType) external view returns (uint256);
 
-    function maxhpRead(uint _type) external view returns (uint256);
+    function maxhpRead(uint256 pepeType) external view returns (uint256);
 
-    function getRandom(uint _type) external view returns (uint256);
-
-    function assignType(uint _type) external view returns (uint256);
+    function assignType(uint256 random) external pure returns (uint256);
 }
 
-contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
-    using Strings for uint256;
+interface IPepurgeRenderer {
+    function tokenURI(
+        uint256 tokenId,
+        uint256 tokenType,
+        uint256 hp
+    ) external view returns (string memory);
+}
 
-    Stats IStats;
+contract PEPURGE is ERC721SeaDrop {
+    address public constant STRICT_ROYALTY_VALIDATOR =
+        0xA000027A9B2802E1ddf7000061001e5c005A0000;
+    uint96 private constant ROYALTY_BPS = 1_000;
+    uint256 private constant MAX_ATTACKERS = 20;
+    uint256 private constant HIDE_HEAL = 2;
 
-    constructor(
-        address royaltyReceiver_,
-        uint96 royaltyFeeNumerator_,
-        string memory name_,
-        string memory symbol_
-    )
-        ERC721AC(name_, symbol_)
-        BasicRoyalties(royaltyReceiver_, royaltyFeeNumerator_)
-        Ownable(address(msg.sender))
-    {}
+    IPepurgeStats public immutable stats;
+    IPepurgeRenderer public immutable renderer;
+    address public immutable deployerWallet;
+    uint256 public collectionSize;
+    uint256 public immutable mintPrice;
+    uint256 public immutable coolDown;
+    uint256 public immutable endGameThreshold;
 
+    uint256 public aliveCount;
+    uint256 private _randomNonce;
+    bool private _gameBurn;
+    bool public gameActivated;
+    uint256 public totalPendingRewards;
+
+    mapping(uint256 => uint256) public pepeType;
+    mapping(uint256 => uint256) public HP;
+    mapping(uint256 => uint256) public hiddenUntil;
+    mapping(uint256 => uint256) public timestamp;
+    mapping(address => uint256) public pendingRewards;
+
+    struct PepurgeView {
+        uint256 tokenId;
+        address tokenOwner;
+        uint256 pepeType;
+        uint256 hp;
+        uint256 lastActionAt;
+        uint256 hiddenUntil;
+        uint256 attack;
+        uint256 defense;
+        uint256 maxHp;
+    }
+
+    error CollectionStillMinting();
+    error DirectBurnDisabled();
+    error DuplicateAttacker(uint256 tokenId);
+    error EmptyAttackGroup();
+    error GameAlreadyActivated();
+    error GameIsOver();
+    error GameNotActivated();
+    error GameStillRunning();
+    error InsufficientReserve();
+    error InvalidConfiguration();
+    error InvalidMintPayment();
+    error InvalidPageSize();
+    error NoRewardAvailable();
+    error NotTokenOwner(uint256 tokenId);
+    error OwnTokenTarget(uint256 tokenId);
+    error PepurgeHidden(uint256 tokenId);
+    error PepurgeOnCooldown(uint256 tokenId);
+    error RewardTransferFailed();
+    error TooManyAttackers();
+
+    event AttackResult(
+        address indexed attacker,
+        uint256 indexed victimTokenId,
+        uint256[] attackerTokenIds,
+        uint256 damage,
+        uint256 victimHPBefore,
+        uint256 victimHPAfter,
+        bool killed
+    );
+    event AutoHideReward(uint256 indexed tokenId, uint256 hiddenUntil);
+    event CashIn(
+        uint256 indexed tokenId,
+        address indexed tokenOwner,
+        uint256 reward
+    );
     event HideAttempt(
         uint256 indexed tokenId,
-        address indexed owner,
-        bool success
+        address indexed tokenOwner,
+        bool success,
+        uint256 hiddenUntil,
+        uint256 healed
     );
-
+    event GameActivated(
+        uint256 collectionSize,
+        uint256 deployerShare,
+        uint256 playerReserve
+    );
+    event MetadataUpdate(uint256 indexed tokenId);
+    event RewardClaimed(address indexed account, uint256 amount);
+    event RewardCredited(address indexed account, uint256 amount);
     event TokenMinted(
         uint256 indexed tokenId,
         uint256 indexed pepeType,
@@ -51,371 +118,441 @@ contract PEPURGE is Ownable, ERC721AC, BasicRoyalties, ReentrancyGuard {
         uint256 maxHP
     );
 
-    event AttackResult(
-        uint256 indexed attackerTokenId,
-        uint256 indexed victimTokenId,
-        address indexed attacker,
-        uint256 damage,
-        uint256 victimHPBefore,
-        uint256 victimHPAfter,
-        bool killed
-    );
+    constructor(
+        address stats_,
+        address renderer_,
+        uint256 collectionSize_,
+        uint256 mintPrice_,
+        uint256 coolDown_,
+        uint256 endGameThreshold_,
+        address[] memory allowedSeaDrop
+    ) ERC721SeaDrop("Pepurge", "PPG", allowedSeaDrop) {
+        if (
+            stats_ == address(0) ||
+            stats_.code.length == 0 ||
+            renderer_ == address(0) ||
+            renderer_.code.length == 0 ||
+            collectionSize_ == 0 ||
+            mintPrice_ == 0 ||
+            (coolDown_ == 0 && block.chainid != 31_337) ||
+            endGameThreshold_ == 0 ||
+            endGameThreshold_ >= collectionSize_ ||
+            collectionSize_ / 4 < endGameThreshold_ ||
+            mintPrice_ < 2 ||
+            allowedSeaDrop.length != 1 ||
+            allowedSeaDrop[0] == address(0)
+        ) revert InvalidConfiguration();
 
-    uint256 public aliveCount = 10000;
-    uint256 public mintPrice = 0.00025 ether;
-    string public ipfsBaseURI =
-        "ipfs://bafybeihbso5n53jblaianewxlwtyg75cszy5aqbfu7fa3otvurzbzprdmi/";
-    uint256 public supply = 10000;
-    uint256 public coolDown = 43200;
-    uint256 public endGameThreshold = 10;
+        stats = IPepurgeStats(stats_);
+        renderer = IPepurgeRenderer(renderer_);
+        deployerWallet = msg.sender;
+        collectionSize = collectionSize_;
+        mintPrice = mintPrice_;
+        coolDown = coolDown_;
+        endGameThreshold = endGameThreshold_;
+        _maxSupply = collectionSize_;
 
-    uint256 private randomNonce;
-    uint256 private _tokenIdCounter;
+        _royaltyInfo = RoyaltyInfo({
+            royaltyAddress: msg.sender,
+            royaltyBps: ROYALTY_BPS
+        });
+        emit MaxSupplyUpdated(collectionSize_);
+        emit RoyaltyInfoUpdated(msg.sender, ROYALTY_BPS);
 
-    mapping(uint256 => uint256) public pepeType;
-
-    mapping(uint256 => uint256) public HP;
-    mapping(uint256 => uint256) public hideTimestamp;
-
-    mapping(uint256 => uint256) public timestamp;
-
-    function _baseURI() internal pure override returns (string memory) {
-        return "data:application/json;base64,";
+        _setTransferValidator(STRICT_ROYALTY_VALIDATOR);
     }
 
-    function isHidden(uint256 tokenId) public view returns (bool) {
-        if (hideTimestamp[tokenId] == 0) return false;
-        return (block.timestamp < hideTimestamp[tokenId] + coolDown);
+    receive() external payable {}
+
+    function mint() external payable nonReentrant {
+        if (msg.value != mintPrice) revert InvalidMintPayment();
+        _mintPepurges(msg.sender, 1);
     }
 
-    function setCon(address _stats) public onlyOwner {
-        IStats = Stats(_stats);
+    function mintSeaDrop(
+        address minter,
+        uint256 quantity
+    ) external override nonReentrant {
+        _onlyAllowedSeaDrop(msg.sender);
+        _mintPepurges(minter, quantity);
     }
 
-    function tokenURI(
-        uint tokenId
-    ) public view override returns (string memory) {
-        string memory json = Base64.encode(
-            bytes(
-                string(
-                    abi.encodePacked(
-                        "{",
-                        '"name": "Pepurge #',
-                        Strings.toString(tokenId),
-                        '",',
-                        '"description": "Kill everyone",',
-                        '"image": "',
-                        ipfsBaseURI,
-                        "",
-                        Strings.toString(pepeType[tokenId]),
-                        '.png",',
-                        ' "attributes": [{"trait_type": "type","value": "',
-                        Strings.toString(pepeType[tokenId]),
-                        '"},{"trait_type": "HP","value": "',
-                        Strings.toString(HP[tokenId]),
-                        '"},{"trait_type": "Attack","value": "',
-                        Strings.toString(IStats.attRead(pepeType[tokenId])),
-                        '"},{"trait_type": "Defense","value": "',
-                        Strings.toString(IStats.defRead(pepeType[tokenId])),
-                        '"},{"trait_type": "Max HP","value": "',
-                        Strings.toString(IStats.maxhpRead(pepeType[tokenId])),
-                        '"} ]'
-                        "}"
-                    )
-                )
-            )
-        );
+    function _mintPepurges(address minter, uint256 quantity) internal {
+        uint256 newTotalMinted = _totalMinted() + quantity;
+        if (newTotalMinted > collectionSize) {
+            revert MintQuantityExceedsMaxSupply(
+                newTotalMinted,
+                collectionSize
+            );
+        }
 
-        return string(abi.encodePacked(_baseURI(), json));
+        uint256 firstTokenId = _nextTokenId();
+        for (uint256 i; i < quantity; ) {
+            uint256 tokenId = firstTokenId + i;
+            uint256 assignedType = stats.assignType(
+                _random(10_000, minter, tokenId)
+            );
+            uint256 maxHp = stats.maxhpRead(assignedType);
+
+            pepeType[tokenId] = assignedType;
+            HP[tokenId] = maxHp;
+            emit TokenMinted(
+                tokenId,
+                assignedType,
+                stats.attRead(assignedType),
+                stats.defRead(assignedType),
+                maxHp
+            );
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        aliveCount += quantity;
+        _safeMint(minter, quantity);
     }
 
-    function setSupply(uint256 _supply) public onlyOwner {
-        supply = _supply;
+    function setSupplyToMinted() external onlyOwner {
+        if (gameActivated) revert GameAlreadyActivated();
+        uint256 minted = _totalMinted();
+        if (minted / 4 < endGameThreshold) revert InvalidConfiguration();
+
+        collectionSize = minted;
+        _maxSupply = minted;
+        emit MaxSupplyUpdated(minted);
     }
 
-    function setMintPrice(uint256 _mintPrice) public onlyOwner {
-        mintPrice = _mintPrice;
-    }
+    function activateGame() external onlyOwner nonReentrant {
+        if (gameActivated) revert GameAlreadyActivated();
+        if (_totalMinted() != collectionSize) revert CollectionStillMinting();
+        if (
+            _royaltyInfo.royaltyAddress != deployerWallet ||
+            _royaltyInfo.royaltyBps != ROYALTY_BPS ||
+            _transferValidator != STRICT_ROYALTY_VALIDATOR
+        ) revert InvalidConfiguration();
 
-    function setIpfsBaseURI(string memory _ipfsBaseURI) public onlyOwner {
-        ipfsBaseURI = _ipfsBaseURI;
-    }
+        uint256 playerReserve = requiredReserve();
+        uint256 deployerShare = (mintPrice * collectionSize) / 5;
+        if (address(this).balance < playerReserve + deployerShare) {
+            revert InsufficientReserve();
+        }
 
-    function setCoolDown(uint256 _coolDown) public onlyOwner {
-        coolDown = _coolDown;
-    }
+        gameActivated = true;
+        (bool success, ) = payable(deployerWallet).call{
+            value: deployerShare
+        }("");
+        if (!success) revert RewardTransferFailed();
 
-    function setEndGameThreshold(uint256 _endGameThreshold) public onlyOwner {
-        endGameThreshold = _endGameThreshold;
-    }
-
-    function setAliveCount(uint256 _aliveCount) public onlyOwner {
-        aliveCount = _aliveCount;
-    }
-
-    function mint() public payable nonReentrant {
-        require(msg.value >= mintPrice, "Insufficient funds");
-        require(_tokenIdCounter < supply);
-        
-        uint256 newTokenId = _tokenIdCounter;
-        
-        _safeMint(msg.sender, 1);
-        
-        _tokenIdCounter += 1;
-        
-        timestamp[newTokenId] = 0;
-        uint256 rand = getRandom(10000);
-        uint256 assignedType = IStats.assignType(rand);
-        pepeType[newTokenId] = assignedType;
-        HP[newTokenId] = IStats.maxhpRead(assignedType);
-        
-        emit TokenMinted(
-            newTokenId,
-            assignedType,
-            IStats.attRead(assignedType),
-            IStats.defRead(assignedType),
-            IStats.maxhpRead(assignedType)
-        );
-    }
-
-    function getRandom(uint256 max) internal returns (uint256) {
-        randomNonce++;
-        return
-            uint256(
-                keccak256(
-                    abi.encodePacked(
-                        block.timestamp,
-                        block.prevrandao,
-                        msg.sender,
-                        randomNonce
-                    )
-                )
-            ) % max;
+        _transferOwnership(address(0));
+        emit GameActivated(collectionSize, deployerShare, playerReserve);
     }
 
     function Attack(
-        uint256 yourTokenId,
-        uint256 victimTokenID
+        uint256[] calldata yourTokenIds,
+        uint256 victimTokenId
     ) external nonReentrant {
-        require(ownerOf(yourTokenId) == msg.sender, "Not your Pepurge");
-        require(_tokenIdCounter >= supply, "Collection still minting");
-        require(msg.sender == tx.origin, "No smart contracts");
-        require(aliveCount >= endGameThreshold, "Game is over");
-        require(HP[victimTokenID] > 0, "Victim is already dead");
-        require(!isHidden(victimTokenID), "Victim is hidden");
-        require(timestamp[yourTokenId] < (block.timestamp - coolDown), "Your Pepurge is on cooldown");
-        
-        uint256 victimHPBefore = HP[victimTokenID];
-        uint256 attackPower = IStats.attRead(pepeType[yourTokenId]);
-        uint256 defensePower = IStats.defRead(pepeType[victimTokenID]);
-        
-        uint256 damage;
-        if (attackPower > defensePower) {
-            damage = attackPower - defensePower;
-        } else {
-            damage = 0;
+        _requireGameRunning();
+
+        uint256 attackerCount = yourTokenIds.length;
+        if (attackerCount == 0) revert EmptyAttackGroup();
+        if (attackerCount > MAX_ATTACKERS) revert TooManyAttackers();
+
+        address victimOwner = ownerOf(victimTokenId);
+        if (victimOwner == msg.sender) revert OwnTokenTarget(victimTokenId);
+        if (isHidden(victimTokenId)) revert PepurgeHidden(victimTokenId);
+
+        uint256 victimHPBefore = HP[victimTokenId];
+        uint256 defensePower = stats.defRead(pepeType[victimTokenId]);
+        uint256 totalDamage;
+
+        for (uint256 i; i < attackerCount; ) {
+            uint256 attackerTokenId = yourTokenIds[i];
+            if (ownerOf(attackerTokenId) != msg.sender) {
+                revert NotTokenOwner(attackerTokenId);
+            }
+            for (uint256 j; j < i; ) {
+                if (yourTokenIds[j] == attackerTokenId) {
+                    revert DuplicateAttacker(attackerTokenId);
+                }
+                unchecked {
+                    ++j;
+                }
+            }
+            if (!_canAct(attackerTokenId)) {
+                revert PepurgeOnCooldown(attackerTokenId);
+            }
+
+            uint256 attackPower = stats.attRead(pepeType[attackerTokenId]);
+            uint256 damage = attackPower + 2 > defensePower
+                ? attackPower + 2 - defensePower
+                : 1;
+            totalDamage += damage;
+            timestamp[attackerTokenId] = block.timestamp;
+            hiddenUntil[attackerTokenId] = 0;
+
+            unchecked {
+                ++i;
+            }
         }
-        
-        uint256 totalDamage = damage + 1;
-        bool killed = false;
-        uint256 victimHPAfter;
-        
-        if (HP[victimTokenID] <= totalDamage) {
-            HP[victimTokenID] = 0;
-            victimHPAfter = 0;
-            killed = true;
-            _burn(victimTokenID);
-            aliveCount = aliveCount - 1;
-            payable(msg.sender).transfer(mintPrice / 2);
+
+        uint256 appliedDamage = totalDamage > victimHPBefore
+            ? victimHPBefore
+            : totalDamage;
+        uint256 victimHPAfter = victimHPBefore - appliedDamage;
+        bool killed = victimHPAfter == 0;
+        HP[victimTokenId] = victimHPAfter;
+        hiddenUntil[victimTokenId] = 0;
+
+        if (killed) {
+            _gameBurn = true;
+            _burn(victimTokenId);
+            _gameBurn = false;
+            unchecked {
+                --aliveCount;
+            }
+            if (aliveCount <= collectionSize / 4) {
+                _creditReward(msg.sender, _killReward());
+            } else {
+                uint256 hiddenAttacker = yourTokenIds[
+                    _random(attackerCount, msg.sender, victimTokenId)
+                ];
+                hiddenUntil[hiddenAttacker] = block.timestamp + coolDown;
+                emit AutoHideReward(
+                    hiddenAttacker,
+                    hiddenUntil[hiddenAttacker]
+                );
+            }
         } else {
-            HP[victimTokenID] = HP[victimTokenID] - totalDamage;
-            victimHPAfter = HP[victimTokenID];
+            emit MetadataUpdate(victimTokenId);
         }
-        
-        timestamp[yourTokenId] = block.timestamp;
-        
+
         emit AttackResult(
-            yourTokenId,
-            victimTokenID,
             msg.sender,
-            totalDamage,
+            victimTokenId,
+            yourTokenIds,
+            appliedDamage,
             victimHPBefore,
             victimHPAfter,
             killed
         );
     }
 
-    function cashIn(uint256 _tokenID) external nonReentrant {
-        require(aliveCount <= endGameThreshold, "Game is still running");
-        require(msg.sender == ownerOf(_tokenID), "Not token owner");
-        require(msg.sender == tx.origin, "No smart contracts");
-        payable(msg.sender).transfer((mintPrice * supply * 4) / 100);
-        _burn(_tokenID);
-    }
-
     function Hide(uint256 yourTokenId) external nonReentrant {
-        require(ownerOf(yourTokenId) == msg.sender, "Not your Pepurge");
-        require(_tokenIdCounter >= supply, "Game is over");
-        require(msg.sender == tx.origin, "No smart contracts");
+        _requireGameRunning();
+        if (ownerOf(yourTokenId) != msg.sender) {
+            revert NotTokenOwner(yourTokenId);
+        }
+        if (!_canAct(yourTokenId)) revert PepurgeOnCooldown(yourTokenId);
+
         timestamp[yourTokenId] = block.timestamp;
+        uint256 healAmount;
+        bool success = _random(10_000, msg.sender, yourTokenId) < 5_000;
 
-        uint256 rand = getRandom(10000);
-        if (rand < 5000) {
-            hideTimestamp[yourTokenId] = block.timestamp;
-            HP[yourTokenId] = IStats.maxhpRead(pepeType[yourTokenId]);
-            emit HideAttempt(yourTokenId, msg.sender, true);
+        if (success) {
+            hiddenUntil[yourTokenId] = block.timestamp + coolDown;
+            uint256 maxHp = stats.maxhpRead(pepeType[yourTokenId]);
+            uint256 currentHp = HP[yourTokenId];
+            uint256 healedHp = currentHp + HIDE_HEAL;
+            if (healedHp > maxHp) healedHp = maxHp;
+            healAmount = healedHp - currentHp;
+            HP[yourTokenId] = healedHp;
+            emit MetadataUpdate(yourTokenId);
         } else {
-            emit HideAttempt(yourTokenId, msg.sender, false);
-        }
-    }
-
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view virtual override(ERC721AC, ERC2981) returns (bool) {
-        return super.supportsInterface(interfaceId);
-    }
-
-    function withdraw(uint256 _amount) external onlyOwner {
-        payable(owner()).transfer(_amount);
-    }
-
-    function getOwnedPepurges(
-        address owner
-    )
-        external
-        view
-        returns (
-            uint256[] memory tokenIds,
-            uint256[] memory types,
-            uint256[] memory hps,
-            bool[] memory hiddenStatus,
-            uint256[] memory timestamps,
-            uint256[] memory attacks,
-            uint256[] memory defenses,
-            uint256[] memory maxHps
-        )
-    {
-        uint256 tokenCount = balanceOf(owner);
-        if (tokenCount == 0) {
-            return (
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new bool[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0)
-            );
+            hiddenUntil[yourTokenId] = 0;
         }
 
-        tokenIds = new uint256[](tokenCount);
-        types = new uint256[](tokenCount);
-        hps = new uint256[](tokenCount);
-        hiddenStatus = new bool[](tokenCount);
-        timestamps = new uint256[](tokenCount);
-        attacks = new uint256[](tokenCount);
-        defenses = new uint256[](tokenCount);
-        maxHps = new uint256[](tokenCount);
-
-        uint256 index = 0;
-
-        for (uint256 i = 0; i < _tokenIdCounter; i++) {
-            // Start from 0, not 1
-            if (_exists(i) && ownerOf(i) == owner) {
-                tokenIds[index] = i;
-                types[index] = pepeType[i];
-                hps[index] = HP[i];
-                hiddenStatus[index] = isHidden(i);
-                timestamps[index] = timestamp[i];
-                attacks[index] = IStats.attRead(pepeType[i]);
-                defenses[index] = IStats.defRead(pepeType[i]);
-                maxHps[index] = IStats.maxhpRead(pepeType[i]);
-                index++;
-            }
-        }
-
-        return (
-            tokenIds,
-            types,
-            hps,
-            hiddenStatus,
-            timestamps,
-            attacks,
-            defenses,
-            maxHps
+        emit HideAttempt(
+            yourTokenId,
+            msg.sender,
+            success,
+            hiddenUntil[yourTokenId],
+            healAmount
         );
     }
 
-    function alivePepes()
+    function cashIn(uint256 tokenId) external nonReentrant {
+        if (!gameActivated || aliveCount > endGameThreshold) {
+            revert GameStillRunning();
+        }
+        if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner(tokenId);
+
+        HP[tokenId] = 0;
+        hiddenUntil[tokenId] = 0;
+        _gameBurn = true;
+        _burn(tokenId);
+        _gameBurn = false;
+        unchecked {
+            --aliveCount;
+        }
+
+        uint256 reward = winnerReward();
+        _creditReward(msg.sender, reward);
+        emit CashIn(tokenId, msg.sender, reward);
+    }
+
+    function claimRewards() external nonReentrant {
+        uint256 reward = pendingRewards[msg.sender];
+        if (reward == 0) revert NoRewardAvailable();
+
+        pendingRewards[msg.sender] = 0;
+        totalPendingRewards -= reward;
+        (bool success, ) = payable(msg.sender).call{value: reward}("");
+        if (!success) revert RewardTransferFailed();
+
+        emit RewardClaimed(msg.sender, reward);
+    }
+
+    function _creditReward(address account, uint256 reward) internal {
+        pendingRewards[account] += reward;
+        totalPendingRewards += reward;
+        emit RewardCredited(account, reward);
+    }
+
+    function _killReward() internal view returns (uint256) {
+        uint256 rewardedKills =
+            (collectionSize / 4) - endGameThreshold + 1;
+        return _playerPool() / rewardedKills;
+    }
+
+    function winnerReward() public view returns (uint256) {
+        return _playerPool() / endGameThreshold;
+    }
+
+    function _playerPool() internal view returns (uint256) {
+        return (mintPrice * collectionSize * 2) / 5;
+    }
+
+    function requiredReserve() public view returns (uint256) {
+        uint256 rewardThreshold = collectionSize / 4;
+        uint256 futureKills;
+        if (aliveCount > rewardThreshold) {
+            futureKills = rewardThreshold - endGameThreshold + 1;
+        } else if (aliveCount > endGameThreshold) {
+            futureKills = aliveCount - endGameThreshold;
+        }
+
+        uint256 futureWinners = aliveCount > endGameThreshold
+            ? endGameThreshold
+            : aliveCount;
+        return
+            totalPendingRewards +
+            (futureKills * _killReward()) +
+            (futureWinners * winnerReward());
+    }
+
+    function isHidden(uint256 tokenId) public view returns (bool) {
+        return hiddenUntil[tokenId] > block.timestamp;
+    }
+
+    function _canAct(uint256 tokenId) internal view returns (bool) {
+        return timestamp[tokenId] + coolDown <= block.timestamp;
+    }
+
+    function _requireGameRunning() internal view {
+        if (!gameActivated) revert GameNotActivated();
+        if (aliveCount <= endGameThreshold) revert GameIsOver();
+    }
+
+    function totalMinted() external view returns (uint256) {
+        return _totalMinted();
+    }
+
+    function tokenURI(
+        uint256 tokenId
+    ) public view override returns (string memory) {
+        if (!_exists(tokenId)) revert URIQueryForNonexistentToken();
+
+        return renderer.tokenURI(tokenId, pepeType[tokenId], HP[tokenId]);
+    }
+
+    function getPepurgesPage(
+        uint256 cursor,
+        uint256 pageSize
+    )
         external
         view
-        returns (
-            uint256[] memory tokenIds,
-            uint256[] memory types,
-            uint256[] memory hps,
-            uint256[] memory timestamps,
-            uint256[] memory attacks,
-            uint256[] memory defenses,
-            uint256[] memory maxHps,
-            bool[] memory hiddenStatus
-        )
+        returns (PepurgeView[] memory pepurges, uint256 nextCursor)
     {
-        uint256 count = 0;
-        // First pass: count alive tokens
-        for (uint256 i = 0; i < _tokenIdCounter; i++) {
-            if (_exists(i) && HP[i] > 0) {
-                count++;
+        if (pageSize == 0 || pageSize > 250) revert InvalidPageSize();
+
+        uint256 minted = _totalMinted();
+        if (cursor < _startTokenId()) cursor = _startTokenId();
+        if (cursor > minted) return (new PepurgeView[](0), 0);
+
+        uint256 end = cursor + pageSize;
+        uint256 pastLastToken = minted + 1;
+        if (end > pastLastToken) end = pastLastToken;
+
+        pepurges = new PepurgeView[](pageSize);
+        uint256 found;
+        for (uint256 tokenId = cursor; tokenId < end; ) {
+            if (_exists(tokenId) && HP[tokenId] != 0) {
+                pepurges[found] = _pepurgeView(tokenId);
+                unchecked {
+                    ++found;
+                }
+            }
+            unchecked {
+                ++tokenId;
             }
         }
 
-        if (count == 0) {
-            return (
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new uint256[](0),
-                new bool[](0)
-            );
+        assembly {
+            mstore(pepurges, found)
         }
-
-        // Initialize arrays
-        tokenIds = new uint256[](count);
-        types = new uint256[](count);
-        hps = new uint256[](count);
-        timestamps = new uint256[](count);
-        attacks = new uint256[](count);
-        defenses = new uint256[](count);
-        maxHps = new uint256[](count);
-        hiddenStatus = new bool[](count);
-
-        // Second pass: collect token data
-        uint256 index = 0;
-        for (uint256 i = 0; i < _tokenIdCounter; i++) {
-            if (_exists(i) && HP[i] > 0) {
-                tokenIds[index] = i;
-                types[index] = pepeType[i];
-                hps[index] = HP[i];
-                timestamps[index] = timestamp[i];
-                attacks[index] = IStats.attRead(pepeType[i]);
-                defenses[index] = IStats.defRead(pepeType[i]);
-                maxHps[index] = IStats.maxhpRead(pepeType[i]);
-                hiddenStatus[index] = isHidden(i);
-                index++;
-            }
-        }
-
-        return (tokenIds, types, hps, timestamps, attacks, defenses, maxHps, hiddenStatus);
+        nextCursor = end == pastLastToken ? 0 : end;
     }
 
-    function _requireCallerIsContractOwner() internal view override {
-        _checkOwner();
+    function _pepurgeView(
+        uint256 tokenId
+    ) internal view returns (PepurgeView memory) {
+        uint256 tokenType = pepeType[tokenId];
+        return
+            PepurgeView({
+                tokenId: tokenId,
+                tokenOwner: ownerOf(tokenId),
+                pepeType: tokenType,
+                hp: HP[tokenId],
+                lastActionAt: timestamp[tokenId],
+                hiddenUntil: hiddenUntil[tokenId],
+                attack: stats.attRead(tokenType),
+                defense: stats.defRead(tokenType),
+                maxHp: stats.maxhpRead(tokenType)
+            });
     }
 
-      function totalMinted() public view returns (uint256) {
-        return _tokenIdCounter;
+    function _beforeTokenTransfers(
+        address from,
+        address to,
+        uint256 startTokenId,
+        uint256 quantity
+    ) internal override {
+        if (from != address(0) && to == address(0) && !_gameBurn) {
+            revert DirectBurnDisabled();
+        }
+        super._beforeTokenTransfers(from, to, startTokenId, quantity);
+    }
+
+    function _random(
+        uint256 max,
+        address account,
+        uint256 tokenId
+    ) internal virtual returns (uint256) {
+        unchecked {
+            ++_randomNonce;
+        }
+        return
+            uint256(
+                keccak256(
+                    abi.encodePacked(
+                        block.difficulty,
+                        block.timestamp,
+                        account,
+                        tokenId,
+                        _randomNonce
+                    )
+                )
+            ) % max;
     }
 }

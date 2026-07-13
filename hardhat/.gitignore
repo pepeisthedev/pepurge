@@ -20,6 +20,8 @@
 /coverage
 
 typechain-types
+/vendor/
+/deployments/
 
 .DS_Store
 .env

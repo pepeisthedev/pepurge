@@ -6,7 +6,6 @@
 .font-creepster {
   font-family: 'Creepster', cursive, fantasy, serif !important;
 }
-
 .font-nosifer {
   font-family: 'Nosifer', cursive, fantasy, serif !important;
 }
@@ -20,8 +19,13 @@
   line-height: 1.2;
   font-weight: 600;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
+  color-scheme: dark;
+  color: #D4D0C9;
+  background-color: #000000;
+
+  --robin-neon: #CCFF00;
+  --robin-black: #000000;
+  --robin-gray: #D4D0C9;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -31,29 +35,19 @@
 
 a {
   font-weight: 600;
-  color: #646cff;
+  color: #CCFF00;
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: #D4D0C9;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #000000;
+  color: #D4D0C9;
   font-family: 'Oswald', 'Arial Black', 'Helvetica', 'Arial', sans-serif;
   font-weight: 600;
-}
-
-
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
 }
