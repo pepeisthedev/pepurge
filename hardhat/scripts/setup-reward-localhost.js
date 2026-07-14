@@ -112,6 +112,10 @@ async function main() {
             value: grossMintFunds,
         })
     ).wait();
+    const ownerWithdrawal = grossMintFunds / 5n;
+    await (
+        await game.withdrawFunds(deployer.address, ownerWithdrawal)
+    ).wait();
     await (await game.activateGame()).wait();
 
     const attackerTokenIds = Array.from(
@@ -130,16 +134,25 @@ async function main() {
         }
     }
 
-    const killPool = (grossMintFunds * 2n) / 5n;
+    const playerReserve = grossMintFunds - ownerWithdrawal;
+    const killPool = playerReserve / 2n;
     const rewardedKills =
         BigInt(Math.floor(COLLECTION_SIZE / 4)) -
         BigInt(END_GAME_THRESHOLD) +
         1n;
-    const killReward = killPool / rewardedKills;
     const expectedAlive = COLLECTION_SIZE - PREPARED_KILLS;
     const expectedPaidKills =
         Math.floor(COLLECTION_SIZE / 4) - expectedAlive + 1;
-    const expectedPendingReward = killReward * BigInt(expectedPaidKills);
+    let remainingKillPool = killPool;
+    let remainingPaidKills = rewardedKills;
+    let expectedPendingReward = 0n;
+    for (let index = 0; index < expectedPaidKills; index += 1) {
+        const reward = remainingKillPool / remainingPaidKills;
+        expectedPendingReward += reward;
+        remainingKillPool -= reward;
+        remainingPaidKills -= 1n;
+    }
+    const nextKillReward = remainingKillPool / remainingPaidKills;
     const [alive, wallet1Balance, wallet2Balance, pendingReward, activated] =
         await Promise.all([
             game.aliveCount(),
@@ -180,7 +193,7 @@ async function main() {
         gameActivated: true,
         preparedKills: PREPARED_KILLS,
         paidKillsPrepared: expectedPaidKills,
-        killRewardWei: killReward.toString(),
+        killRewardWei: nextKillReward.toString(),
         pendingRewardWei: pendingReward.toString(),
         nextTargetTokenId: ACCOUNT_1_TOKENS + PREPARED_KILLS + 1,
         wallet1: wallet1.address,
@@ -202,7 +215,7 @@ async function main() {
     console.log("Next target token:", deployment.nextTargetTokenId);
     console.log(
         "Reward per kill:",
-        hre.ethers.formatEther(killReward),
+        hre.ethers.formatEther(nextKillReward),
         "ETH",
     );
     console.log(

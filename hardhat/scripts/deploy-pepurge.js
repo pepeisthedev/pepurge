@@ -6,6 +6,7 @@ const CANONICAL_SEADROP = "0x00005EA00Ac477B1030CE78506496e8C2dE24bf5";
 const STRICT_ROYALTY_VALIDATOR =
     "0xA000027A9B2802E1ddf7000061001e5c005A0000";
 const MAINNET_COOLDOWN_SECONDS = 12 * 60 * 60;
+const MAINNET_MINT_PRICE_ETH = "0.0005633";
 
 async function requireCode(address, label) {
     const code = await hre.ethers.provider.getCode(address);
@@ -17,8 +18,19 @@ async function main() {
     const network = await hre.ethers.provider.getNetwork();
     const isLocal = network.chainId === 31337n;
     const collectionSize = Number(process.env.COLLECTION_SIZE || "10000");
+    if (
+        !isLocal &&
+        process.env.MINT_PRICE_ETH &&
+        process.env.MINT_PRICE_ETH !== MAINNET_MINT_PRICE_ETH
+    ) {
+        throw new Error(
+            `Robinhood mint price must be ${MAINNET_MINT_PRICE_ETH} ETH.`,
+        );
+    }
     const mintPrice = hre.ethers.parseEther(
-        process.env.MINT_PRICE_ETH || "0.00025",
+        isLocal
+            ? process.env.MINT_PRICE_ETH || "0.0005633"
+            : MAINNET_MINT_PRICE_ETH,
     );
     const cooldown = isLocal
         ? Number(process.env.COOLDOWN_SECONDS || "43200")

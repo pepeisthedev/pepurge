@@ -129,7 +129,10 @@ export default function MainPage(): React.JSX.Element {
 
                         <section className="space-y-4">
                             <RuleHeading>Hide</RuleHeading>
-                            <p>A ready Pepurge can attempt to hide.</p>
+                            <p>
+                                While more than <Strong>25% of the collection remains alive</Strong>, a
+                                ready Pepurge can attempt to hide.
+                            </p>
                             <p>The attempt has a <Strong>50% chance of success</Strong>:</p>
                             <RuleList
                                 items={[
@@ -139,7 +142,9 @@ export default function MainPage(): React.JSX.Element {
                             />
                             <p>
                                 Hidden Pepurges cannot be attacked. They automatically become exposed
-                                when their cooldown ends.
+                                when their cooldown ends. When the game reaches 25% remaining, every
+                                hidden Pepurge becomes exposed immediately and hiding is disabled for
+                                the rest of the game.
                             </p>
                         </section>
 
@@ -176,19 +181,26 @@ export default function MainPage(): React.JSX.Element {
                                 it earns a monetary reward.
                             </p>
                             <p>
-                                A total of <Strong>40% of the collection&apos;s mint funds</Strong> is
-                                allocated to this stage. It is divided equally across every eligible
-                                kill from the 25% transition through the final-survivor threshold.
+                                At activation, half of the game balance is allocated to paid kills.
+                                Each reward is calculated from the kill pool and the number of eligible
+                                paid kills that remain.
                             </p>
-                            <Formula>Kill reward = 40% of mint funds / eligible paid kills</Formula>
+                            <Formula>Kill reward = current kill pool / remaining paid kills</Formula>
                             <p>Rewards are credited to your account and must be claimed separately.</p>
                             <RuleSubheading>Final 10 Survivors</RuleSubheading>
                             <p>
                                 The production game&apos;s final <Strong>10 surviving Pepurges</Strong> can
-                                each be cashed in for <Strong>4% of the collection&apos;s mint funds</Strong>.
-                                Local test deployments may use a smaller survivor threshold.
+                                each be cashed in for an equal share of the remaining winner pool. Local
+                                test deployments may use a smaller survivor threshold.
                             </p>
                             <p>Cashing in a survivor permanently burns that Pepurge.</p>
+                            <RuleSubheading>Owner Withdrawals</RuleSubheading>
+                            <p>
+                                The contract owner can withdraw uncredited ETH during the game. After a
+                                withdrawal, the remaining uncredited balance is reallocated across future
+                                kills and survivor rewards. Rewards already credited to players remain
+                                protected and can still be claimed in full.
+                            </p>
                         </section>
 
                         <section className="space-y-4 border-t border-[#D4D0C9]/40 pt-8">

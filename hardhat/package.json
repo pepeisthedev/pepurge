@@ -13,7 +13,9 @@
     "setup:localhost": "hardhat run scripts/setup-localhost.js --network localhost",
     "setup:reward-localhost": "hardhat run scripts/setup-reward-localhost.js --network localhost",
     "deploy:robinhood": "hardhat run scripts/deploy-pepurge.js --network robinhood",
+    "withdraw:robinhood": "hardhat run scripts/withdraw-funds.js --network robinhood",
     "activate:robinhood": "hardhat run scripts/activate-game.js --network robinhood",
+    "renounce:robinhood": "hardhat run scripts/renounce-ownership.js --network robinhood",
     "configure:seadrop": "hardhat run scripts/configure-seadrop.js --network robinhood",
     "node": "hardhat node"
   },

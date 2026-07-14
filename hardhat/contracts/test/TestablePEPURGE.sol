@@ -30,6 +30,10 @@ contract TestablePEPURGE is PEPURGE {
         _forcedRandom = value;
     }
 
+    function setHiddenUntil(uint256 tokenId, uint256 value) external {
+        hiddenUntil[tokenId] = value;
+    }
+
     function _random(
         uint256 max,
         address,

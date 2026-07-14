@@ -96,10 +96,14 @@ async function main() {
     ]);
     await mintTokens(game, wallet1, TOKENS_PER_WALLET, mintPrice, "Wallet 1");
     await mintTokens(game, wallet2, TOKENS_PER_WALLET, mintPrice, "Wallet 2");
+    const grossMintFunds = mintPrice * BigInt(COLLECTION_SIZE);
+    const ownerWithdrawal = grossMintFunds / 5n;
+    await (
+        await game.withdrawFunds(deployer.address, ownerWithdrawal)
+    ).wait();
     await (await game.connect(deployer).activateGame()).wait();
 
-    const expectedPlayerReserve =
-        (mintPrice * BigInt(COLLECTION_SIZE) * 4n) / 5n;
+    const expectedPlayerReserve = grossMintFunds - ownerWithdrawal;
     const [
         wallet1Balance,
         wallet2Balance,

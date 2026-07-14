@@ -53,42 +53,67 @@ next attack remains available for testing another paid kill.
 
 ## Robinhood mainnet deployment
 
-Copy the non-secret settings from `.env.example` into `.env`, add a funded
-deployment key, then run:
+Copy `.env.example` to `.env` and add a funded `ROBINHOOD_PRIVATE_KEY`.
+`ROBINHOOD_RPC_URL` is recommended but has a public fallback. The production
+deployment otherwise uses fixed or default settings: 10,000 maximum supply,
+`0.0005633 ETH`, 12-hour cooldown, ten final winners, canonical SeaDrop, and the
+strict royalty validator. Then run:
 
 ```bash
 npm run deploy:robinhood
 ```
 
-The deploy script creates `Stats` and `PEPURGE`, verifies the canonical OpenSea
+The deploy script creates `Stats` and `PEPURGE` with the fixed production mint
+price of `0.0005633 ETH`, verifies the canonical OpenSea
 contracts have bytecode, deploys the immutable metadata renderer, fixes ERC-2981
 royalties at 10% for the deployer, sets OpenSea's strict transfer validator, and
 makes the NFT contract the SeaDrop creator payout address. Keeping primary
 proceeds in the NFT contract funds kill and winner rewards. The production
-cooldown is fixed at 12 hours; the local game keeps its 60-second test cooldown.
+cooldown is fixed at 12 hours, and direct minting is disabled outside localhost;
+the local game keeps its 60-second test cooldown.
 Deployment addresses are written to ignored `deployments/`.
 
 ## Finalize and activate
 
-Combat remains disabled until the owner activates the game. If all tokens sold,
-activate using the configured owner wallet:
+Combat remains disabled until the owner activates the game. After the OpenSea
+mint has stopped, withdraw the chosen owner allocation. For example, this sends
+20% of the net proceeds received by the contract to the owner wallet:
 
 ```bash
-CONFIRM_ACTIVATE=YES npm run activate:robinhood
+CONFIRM_WITHDRAW=YES WITHDRAW_BPS=2000 npm run withdraw:robinhood
 ```
 
-If the collection did not sell out, stop the OpenSea drop first and permanently
-cap supply at the number already minted while activating:
+The withdrawal command prints the remaining contract balance. Activation sends
+no ETH. It snapshots that entire remaining balance, assigns half to kill rewards
+and half to final-winner rewards, and requires the expected balance to be stated
+explicitly:
 
 ```bash
-CONFIRM_ACTIVATE=YES CONFIRM_FINALIZE_SUPPLY=YES npm run activate:robinhood
+EXPECTED_GAME_BALANCE_ETH=<remaining-balance> CONFIRM_ACTIVATE=YES npm run activate:robinhood
 ```
 
-At least 40 tokens must exist when the winner threshold is ten. Activation sends
-20% of gross mint funds to the original deployer and locks the remaining balance
-for the 40% kill pool and 40% final-winner pool. It also verifies the deployer's
-10% royalty and strict validator, then renounces ownership so those settings and
-the finalized supply cannot be changed after combat begins.
+If the collection did not sell out, stop the OpenSea stage first, make the owner
+withdrawal, then permanently cap supply at the number actually minted and
+activate with:
+
+```bash
+EXPECTED_GAME_BALANCE_ETH=<remaining-balance> CONFIRM_ACTIVATE=YES CONFIRM_FINALIZE_SUPPLY=YES npm run activate:robinhood
+```
+
+At least 40 tokens must exist when the winner threshold is ten. After activation,
+the owner can withdraw any ETH that has not already been credited to a player.
+Each withdrawal recalculates the future reward pools from the balance left in the
+contract. Pending player claims remain reserved and cannot be withdrawn.
+Activation also verifies the deployer's 10% royalty and strict validator. The
+deployer remains the contract owner. Ownership can be renounced later with a
+separate, irreversible transaction:
+
+```bash
+CONFIRM_RENOUNCE_OWNERSHIP=YES npm run renounce:robinhood
+```
+
+Renouncing ownership is optional and should only be done after all owner-only
+configuration and operational controls are no longer needed.
 
 Robinhood mainnet configuration:
 
@@ -104,8 +129,14 @@ mainnet only.
 
 ## OpenSea public mint
 
-Set `PEPURGE_ADDRESS` to the deployed address. Optionally set `MINT_START`,
-`MINT_END`, and `MAX_MINTS_PER_WALLET`, then run:
+This section is optional when the drop is configured entirely through OpenSea
+Studio. In Studio, set the mint price to `0.0005633 ETH`, set the PEPURGE contract
+as the primary-sale earnings receiver, and configure the supply, dates, and
+per-wallet limit there.
+
+Set `PEPURGE_ADDRESS` and `MAX_MINTS_PER_WALLET` to the deployed address and
+your chosen explicit wallet cap. Optionally set `MINT_START` and `MINT_END`,
+then run:
 
 ```bash
 npm run configure:seadrop
@@ -113,9 +144,21 @@ npm run configure:seadrop
 
 This configures a public SeaDrop stage at the contract's `mintPrice`, with the
 NFT contract as payout receiver and no SeaDrop fee deduction. OpenSea Studio can
-then publish the drop and configure creator earnings for the already assigned
-strict transfer validator. Seaport restricted orders and its SignedZone enforce
-the 10% creator earnings on supported sales.
+also configure the item limit, mint price, stage dates, and per-wallet limit. If
+Studio is used, set the price to exactly `0.0005633 ETH` and the primary-sale
+earnings receiver to the PEPURGE contract. Ending the OpenSea stage stops public
+minting, but an undersubscribed game still requires `setSupplyToMinted()` before
+activation; the guarded activation script performs that finalization.
+
+OpenSea currently documents a 10% platform fee for primary drops. PEPURGE uses
+the net ETH that actually reaches the contract. With a 20% pre-activation owner
+withdrawal, net proceeds are allocated 20% to the owner, 40% to kill rewards,
+and 40% to final winners. Seaport restricted orders and its SignedZone enforce
+the separate 10% creator earnings on supported secondary sales.
+
+Hide actions and hidden protection are disabled once the alive supply reaches
+25% of the finalized collection size. Any character still hidden at that
+transition becomes immediately attackable during the ETH-reward phase.
 
 After deployment, set the website's `VITE_CONTRACT_ADDRESS` to the new PEPURGE
 address and rebuild the website.

@@ -165,6 +165,7 @@ export default function NightmarePage() {
     }, [isConnected, walletProvider])
 
     const normalizedAddress = address?.toLowerCase()
+    const ethRewardThreshold = Math.floor(collectionSize / 4)
     const userPepurges = useMemo(
         () =>
             allPepurges.filter(
@@ -177,9 +178,9 @@ export default function NightmarePage() {
             allPepurges.filter(
                 (pepurge) =>
                     pepurge.tokenOwner.toLowerCase() !== normalizedAddress &&
-                    pepurge.hiddenUntil <= currentTime,
+                    !isHidden(pepurge),
             ),
-        [allPepurges, normalizedAddress, currentTime],
+        [allPepurges, normalizedAddress, currentTime, aliveCount, ethRewardThreshold],
     )
     const filteredTargets = useMemo(() => {
         if (!searchTokenId.trim()) return availableTargets
@@ -202,8 +203,6 @@ export default function NightmarePage() {
         aliveCount <= endGameThreshold
     const awaitingActivation =
         collectionSize > 0 && totalMinted >= collectionSize && !gameActivated
-    const ethRewardThreshold = Math.floor(collectionSize / 4)
-
     function actionInfo(pepurge: PepurgeNFT) {
         const readyAt = pepurge.lastActionTimestamp + cooldownSeconds
         if (pepurge.lastActionTimestamp === 0 || readyAt <= currentTime) {
@@ -219,7 +218,10 @@ export default function NightmarePage() {
     }
 
     function isHidden(pepurge: PepurgeNFT) {
-        return pepurge.hiddenUntil > currentTime
+        return (
+            aliveCount > ethRewardThreshold &&
+            pepurge.hiddenUntil > currentTime
+        )
     }
 
     async function fetchBattlefield() {
@@ -319,13 +321,22 @@ export default function NightmarePage() {
             const provider = new ethers.BrowserProvider(
                 walletProvider as ethers.Eip1193Provider,
             )
+            const contract = new ethers.Contract(
+                pepurgeContractAddress,
+                pepurgeAbi,
+                provider,
+            )
             const contractInterface = new ethers.Interface(pepurgeAbi)
             const attackEvent = contractInterface.getEvent("AttackResult")
             const hiddenEvent = contractInterface.getEvent("AutoHideReward")
             const rewardEvent = contractInterface.getEvent("RewardCredited")
             if (!attackEvent || !hiddenEvent || !rewardEvent) return
 
-            const network = await provider.getNetwork()
+            const [network, survivorReward] = await Promise.all([
+                provider.getNetwork(),
+                contract.winnerReward(),
+            ])
+            setWinnerReward(ethers.formatEther(survivorReward))
             const chainId = network.chainId.toString()
             if (battleLogChainId.current !== chainId) {
                 battleLogChainId.current = chainId
@@ -857,7 +868,11 @@ export default function NightmarePage() {
                                                 </Button>
                                                 <Button
                                                     onClick={() => openActionModal(pepurge, "hide")}
-                                                    disabled={actionsDisabled || hidden}
+                                                    disabled={
+                                                        actionsDisabled ||
+                                                        hidden ||
+                                                        aliveCount <= ethRewardThreshold
+                                                    }
                                                     className="bg-black hover:bg-[#D4D0C9] hover:text-black text-[#D4D0C9] border-2 border-[#D4D0C9] disabled:bg-[#D4D0C9]/20 disabled:text-[#D4D0C9]"
                                                 >
                                                     <Ghost className="w-4 h-4 mr-1" /> HIDE

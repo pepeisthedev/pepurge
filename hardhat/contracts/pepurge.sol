@@ -40,6 +40,8 @@ contract PEPURGE is ERC721SeaDrop {
     uint256 private _randomNonce;
     bool private _gameBurn;
     bool public gameActivated;
+    uint256 public killRewardPool;
+    uint256 public winnerRewardPool;
     uint256 public totalPendingRewards;
 
     mapping(uint256 => uint256) public pepeType;
@@ -62,16 +64,18 @@ contract PEPURGE is ERC721SeaDrop {
 
     error CollectionStillMinting();
     error DirectBurnDisabled();
+    error DirectMintDisabled();
     error DuplicateAttacker(uint256 tokenId);
     error EmptyAttackGroup();
     error GameAlreadyActivated();
     error GameIsOver();
     error GameNotActivated();
     error GameStillRunning();
-    error InsufficientReserve();
+    error HidingDisabled();
     error InvalidConfiguration();
     error InvalidMintPayment();
     error InvalidPageSize();
+    error InvalidWithdrawal();
     error NoRewardAvailable();
     error NotTokenOwner(uint256 tokenId);
     error OwnTokenTarget(uint256 tokenId);
@@ -104,8 +108,13 @@ contract PEPURGE is ERC721SeaDrop {
     );
     event GameActivated(
         uint256 collectionSize,
-        uint256 deployerShare,
-        uint256 playerReserve
+        uint256 playerReserve,
+        uint256 killRewardPool,
+        uint256 winnerRewardPool
+    );
+    event FundsWithdrawn(
+        address indexed recipient,
+        uint256 amount
     );
     event MetadataUpdate(uint256 indexed tokenId);
     event RewardClaimed(address indexed account, uint256 amount);
@@ -165,6 +174,7 @@ contract PEPURGE is ERC721SeaDrop {
     receive() external payable {}
 
     function mint() external payable nonReentrant {
+        if (block.chainid != 31_337) revert DirectMintDisabled();
         if (msg.value != mintPrice) revert InvalidMintPayment();
         _mintPepurges(msg.sender, 1);
     }
@@ -232,20 +242,31 @@ contract PEPURGE is ERC721SeaDrop {
             _transferValidator != STRICT_ROYALTY_VALIDATOR
         ) revert InvalidConfiguration();
 
-        uint256 playerReserve = requiredReserve();
-        uint256 deployerShare = (mintPrice * collectionSize) / 5;
-        if (address(this).balance < playerReserve + deployerShare) {
-            revert InsufficientReserve();
-        }
-
+        uint256 playerReserve = address(this).balance;
+        _recalculateRewardPools();
         gameActivated = true;
-        (bool success, ) = payable(deployerWallet).call{
-            value: deployerShare
-        }("");
-        if (!success) revert RewardTransferFailed();
+        emit GameActivated(
+            collectionSize,
+            playerReserve,
+            killRewardPool,
+            winnerRewardPool
+        );
+    }
 
-        _transferOwnership(address(0));
-        emit GameActivated(collectionSize, deployerShare, playerReserve);
+    function withdrawFunds(
+        address payable recipient,
+        uint256 amount
+    ) external onlyOwner nonReentrant {
+        if (
+            recipient == address(0) ||
+            amount == 0 ||
+            amount > withdrawableBalance()
+        ) revert InvalidWithdrawal();
+
+        (bool success, ) = recipient.call{value: amount}("");
+        if (!success) revert RewardTransferFailed();
+        if (gameActivated) _recalculateRewardPools();
+        emit FundsWithdrawn(recipient, amount);
     }
 
     function Attack(
@@ -305,24 +326,7 @@ contract PEPURGE is ERC721SeaDrop {
         hiddenUntil[victimTokenId] = 0;
 
         if (killed) {
-            _gameBurn = true;
-            _burn(victimTokenId);
-            _gameBurn = false;
-            unchecked {
-                --aliveCount;
-            }
-            if (aliveCount <= collectionSize / 4) {
-                _creditReward(msg.sender, _killReward());
-            } else {
-                uint256 hiddenAttacker = yourTokenIds[
-                    _random(attackerCount, msg.sender, victimTokenId)
-                ];
-                hiddenUntil[hiddenAttacker] = block.timestamp + coolDown;
-                emit AutoHideReward(
-                    hiddenAttacker,
-                    hiddenUntil[hiddenAttacker]
-                );
-            }
+            _settleKill(yourTokenIds, victimTokenId, attackerCount);
         } else {
             emit MetadataUpdate(victimTokenId);
         }
@@ -338,8 +342,36 @@ contract PEPURGE is ERC721SeaDrop {
         );
     }
 
+    function _settleKill(
+        uint256[] calldata attackerTokenIds,
+        uint256 victimTokenId,
+        uint256 attackerCount
+    ) internal {
+        bool paidKill = aliveCount - 1 <= collectionSize / 4;
+        uint256 reward = paidKill ? _killReward() : 0;
+        _gameBurn = true;
+        _burn(victimTokenId);
+        _gameBurn = false;
+        unchecked {
+            --aliveCount;
+        }
+
+        if (paidKill) {
+            killRewardPool -= reward;
+            _creditReward(msg.sender, reward);
+            return;
+        }
+
+        uint256 hiddenAttacker = attackerTokenIds[
+            _random(attackerCount, msg.sender, victimTokenId)
+        ];
+        hiddenUntil[hiddenAttacker] = block.timestamp + coolDown;
+        emit AutoHideReward(hiddenAttacker, hiddenUntil[hiddenAttacker]);
+    }
+
     function Hide(uint256 yourTokenId) external nonReentrant {
         _requireGameRunning();
+        if (aliveCount <= collectionSize / 4) revert HidingDisabled();
         if (ownerOf(yourTokenId) != msg.sender) {
             revert NotTokenOwner(yourTokenId);
         }
@@ -377,6 +409,7 @@ contract PEPURGE is ERC721SeaDrop {
         }
         if (ownerOf(tokenId) != msg.sender) revert NotTokenOwner(tokenId);
 
+        uint256 reward = winnerReward();
         HP[tokenId] = 0;
         hiddenUntil[tokenId] = 0;
         _gameBurn = true;
@@ -386,7 +419,7 @@ contract PEPURGE is ERC721SeaDrop {
             --aliveCount;
         }
 
-        uint256 reward = winnerReward();
+        winnerRewardPool -= reward;
         _creditReward(msg.sender, reward);
         emit CashIn(tokenId, msg.sender, reward);
     }
@@ -410,39 +443,64 @@ contract PEPURGE is ERC721SeaDrop {
     }
 
     function _killReward() internal view returns (uint256) {
-        uint256 rewardedKills =
-            (collectionSize / 4) - endGameThreshold + 1;
-        return _playerPool() / rewardedKills;
+        uint256 futureKills = _futureRewardedKills();
+        return futureKills == 0 ? 0 : killRewardPool / futureKills;
     }
 
     function winnerReward() public view returns (uint256) {
-        return _playerPool() / endGameThreshold;
+        uint256 futureWinners = _futureWinners();
+        return futureWinners == 0 ? 0 : winnerRewardPool / futureWinners;
     }
 
-    function _playerPool() internal view returns (uint256) {
-        return (mintPrice * collectionSize * 2) / 5;
+    function _futureRewardedKills() internal view returns (uint256) {
+        uint256 rewardThreshold = collectionSize / 4;
+        if (aliveCount > rewardThreshold) {
+            return rewardThreshold - endGameThreshold + 1;
+        }
+        return aliveCount > endGameThreshold
+            ? aliveCount - endGameThreshold
+            : 0;
+    }
+
+    function _futureWinners() internal view returns (uint256) {
+        return aliveCount > endGameThreshold
+            ? endGameThreshold
+            : aliveCount;
+    }
+
+    function _recalculateRewardPools() internal {
+        uint256 available = address(this).balance - totalPendingRewards;
+        uint256 futureKills = _futureRewardedKills();
+        uint256 futureWinners = _futureWinners();
+        if (futureKills == 0) {
+            killRewardPool = 0;
+            winnerRewardPool = futureWinners == 0 ? 0 : available;
+        } else if (futureWinners == 0) {
+            killRewardPool = available;
+            winnerRewardPool = 0;
+        } else {
+            killRewardPool = available / 2;
+            winnerRewardPool = available - killRewardPool;
+        }
     }
 
     function requiredReserve() public view returns (uint256) {
-        uint256 rewardThreshold = collectionSize / 4;
-        uint256 futureKills;
-        if (aliveCount > rewardThreshold) {
-            futureKills = rewardThreshold - endGameThreshold + 1;
-        } else if (aliveCount > endGameThreshold) {
-            futureKills = aliveCount - endGameThreshold;
-        }
+        return totalPendingRewards + killRewardPool + winnerRewardPool;
+    }
 
-        uint256 futureWinners = aliveCount > endGameThreshold
-            ? endGameThreshold
-            : aliveCount;
-        return
-            totalPendingRewards +
-            (futureKills * _killReward()) +
-            (futureWinners * winnerReward());
+    function withdrawableBalance() public view returns (uint256) {
+        uint256 balance = address(this).balance;
+        if (!gameActivated) return balance;
+
+        return balance > totalPendingRewards
+            ? balance - totalPendingRewards
+            : 0;
     }
 
     function isHidden(uint256 tokenId) public view returns (bool) {
-        return hiddenUntil[tokenId] > block.timestamp;
+        return
+            aliveCount > collectionSize / 4 &&
+            hiddenUntil[tokenId] > block.timestamp;
     }
 
     function _canAct(uint256 tokenId) internal view returns (bool) {

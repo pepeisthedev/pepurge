@@ -39,21 +39,50 @@ async function main() {
                     "CONFIRM_FINALIZE_SUPPLY=YES to cap supply permanently.",
             );
         }
+        await (
+            await game.updatePublicDrop(deployment.seaDropAddress, {
+                mintPrice: 0,
+                startTime: 0,
+                endTime: 0,
+                maxTotalMintableByWallet: 0,
+                feeBps: 0,
+                restrictFeeRecipients: false,
+            })
+        ).wait();
+        console.log("SeaDrop public mint disabled.");
         await (await game.setSupplyToMinted()).wait();
-        finalSupply = minted;
+        finalSupply = await game.collectionSize();
         console.log("Supply finalized at:", finalSupply.toString());
     }
 
-    const mintPrice = await game.mintPrice();
     const threshold = await game.endGameThreshold();
-    const gross = mintPrice * finalSupply;
-    const deployerShare = gross / 5n;
-    const killPool = (gross * 2n) / 5n;
-    const winnerPool = (gross * 2n) / 5n;
+    const playerReserve = await hre.ethers.provider.getBalance(
+        await game.getAddress(),
+    );
+    if (!process.env.EXPECTED_GAME_BALANCE_ETH) {
+        throw new Error(
+            "Set EXPECTED_GAME_BALANCE_ETH to the exact post-withdrawal balance before activation.",
+        );
+    }
+    const expectedBalance = hre.ethers.parseEther(
+        process.env.EXPECTED_GAME_BALANCE_ETH,
+    );
+    if (playerReserve !== expectedBalance) {
+        throw new Error(
+            `Contract balance is ${hre.ethers.formatEther(playerReserve)} ETH, ` +
+                `not EXPECTED_GAME_BALANCE_ETH=${process.env.EXPECTED_GAME_BALANCE_ETH}.`,
+        );
+    }
+    const killPool = playerReserve / 2n;
+    const winnerPool = playerReserve - killPool;
     const rewardedKills = finalSupply / 4n - threshold + 1n;
 
     console.log("Final supply:", finalSupply.toString());
-    console.log("Deployer share:", hre.ethers.formatEther(deployerShare), "ETH");
+    console.log(
+        "Game balance:",
+        hre.ethers.formatEther(playerReserve),
+        "ETH",
+    );
     console.log("Kill pool:", hre.ethers.formatEther(killPool), "ETH");
     console.log("Winner pool:", hre.ethers.formatEther(winnerPool), "ETH");
     console.log("ETH-rewarded kills:", rewardedKills.toString());
@@ -68,6 +97,9 @@ async function main() {
 
     deployment.collectionSize = Number(finalSupply);
     deployment.gameActivated = true;
+    deployment.playerReserveWei = playerReserve.toString();
+    deployment.killRewardPoolWei = killPool.toString();
+    deployment.winnerRewardPoolWei = winnerPool.toString();
     deployment.activationTransaction = transaction.hash;
     fs.writeFileSync(deploymentPath, `${JSON.stringify(deployment, null, 2)}\n`);
     console.log("Game activated:", transaction.hash);

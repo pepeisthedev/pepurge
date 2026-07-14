@@ -15,11 +15,20 @@ async function main() {
     const endTime = Number(
         process.env.MINT_END || startTime + 30 * 24 * 60 * 60,
     );
-    const maxPerWallet = Number(process.env.MAX_MINTS_PER_WALLET || "10000");
+    if (!process.env.MAX_MINTS_PER_WALLET) {
+        throw new Error(
+            "Set MAX_MINTS_PER_WALLET explicitly before configuring SeaDrop.",
+        );
+    }
+    const maxPerWallet = Number(process.env.MAX_MINTS_PER_WALLET);
     const mintPrice = await pepurge.mintPrice();
 
     if (endTime <= startTime) throw new Error("MINT_END must follow MINT_START.");
-    if (maxPerWallet < 1 || maxPerWallet > 65535) {
+    if (
+        !Number.isInteger(maxPerWallet) ||
+        maxPerWallet < 1 ||
+        maxPerWallet > 65535
+    ) {
         throw new Error("MAX_MINTS_PER_WALLET must be between 1 and 65535.");
     }
 
