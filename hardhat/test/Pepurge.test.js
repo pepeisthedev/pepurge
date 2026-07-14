@@ -379,7 +379,7 @@ describe("PEPURGE", function () {
         expect(await game.aliveCount()).to.equal(1);
     });
 
-    it("covers every random value exactly once and keeps balanced ceilings", async function () {
+    it("covers every random value exactly once and exposes the configured stats", async function () {
         const { stats } = await deployGame();
         const counts = Array(24).fill(0);
         for (let random = 0; random < 10_000; random += 1) {
@@ -390,10 +390,23 @@ describe("PEPURGE", function () {
         );
         expect(counts[23]).to.equal(500);
 
+        const expectedAttack = [
+            5, 6, 7, 9, 1, 8, 8, 7, 1, 7, 1, 10, 8, 1, 6, 8, 3, 5, 8,
+            3, 7, 8, 2,
+        ];
+        const expectedDefense = [
+            5, 4, 8, 3, 2, 6, 5, 3, 1, 2, 1, 7, 5, 1, 8, 6, 5, 5, 5,
+            4, 4, 3, 3,
+        ];
+        const expectedMaxHp = [
+            7, 7, 10, 5, 5, 7, 8, 5, 3, 4, 5, 6, 7, 5, 10, 7, 7, 7, 7,
+            6, 6, 7, 5,
+        ];
+
         for (let type = 1; type <= 23; type += 1) {
-            expect(await stats.attRead(type)).to.be.at.most(8);
-            expect(await stats.defRead(type)).to.be.at.most(7);
-            expect(await stats.maxhpRead(type)).to.be.at.most(8);
+            expect(await stats.attRead(type)).to.equal(expectedAttack[type - 1]);
+            expect(await stats.defRead(type)).to.equal(expectedDefense[type - 1]);
+            expect(await stats.maxhpRead(type)).to.equal(expectedMaxHp[type - 1]);
         }
     });
 });
