@@ -189,9 +189,8 @@ export default function MainPage(): React.JSX.Element {
                             <p>Rewards are credited to your account and must be claimed separately.</p>
                             <RuleSubheading>Final 10 Survivors</RuleSubheading>
                             <p>
-                                The production game&apos;s final <Strong>10 surviving Pepurges</Strong> can
-                                each be cashed in for an equal share of the remaining winner pool. Local
-                                test deployments may use a smaller survivor threshold.
+                                The game&apos;s final <Strong>10 surviving Pepurges</Strong> can
+                                each be cashed in for an equal share of the remaining winner pool.
                             </p>
                             <p>Cashing in a survivor permanently burns that Pepurge.</p>
                             <RuleSubheading>Owner Withdrawals</RuleSubheading>
