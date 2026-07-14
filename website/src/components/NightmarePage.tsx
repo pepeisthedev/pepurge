@@ -31,6 +31,7 @@ import { Checkbox } from "./ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Input } from "./ui/input"
 import pepurgeAbi from "../assets/abis/Pepurge.json"
+import { createWalletProvider, withReadProvider } from "../lib/providers"
 
 const pepurgeContractAddress = import.meta.env.VITE_CONTRACT_ADDRESS
 const PAGE_SIZE = 200
@@ -228,77 +229,76 @@ export default function NightmarePage() {
         if (!walletProvider || !address || !pepurgeContractAddress) return
         setIsLoading(true)
         try {
-            const provider = new ethers.BrowserProvider(
-                walletProvider as ethers.Eip1193Provider,
-            )
-            const contract = new ethers.Contract(
-                pepurgeContractAddress,
-                pepurgeAbi,
-                provider,
-            )
-            const [
-                minted,
-                size,
-                cooldown,
-                alive,
-                threshold,
-                activated,
-                reward,
-                survivorReward,
-            ] = await Promise.all([
-                contract.totalMinted(),
-                contract.collectionSize(),
-                contract.coolDown(),
-                contract.aliveCount(),
-                contract.endGameThreshold(),
-                contract.gameActivated(),
-                contract.pendingRewards(address),
-                contract.winnerReward(),
-            ])
-
-            const mintedNumber = Number(minted)
-            const totalBatches = Math.ceil(mintedNumber / PAGE_SIZE)
-            setTotalMinted(mintedNumber)
-            setCollectionSize(Number(size))
-            setCooldownSeconds(Number(cooldown))
-            setAliveCount(Number(alive))
-            setEndGameThreshold(Number(threshold))
-            setGameActivated(activated)
-            setPendingReward(ethers.formatEther(reward))
-            setWinnerReward(ethers.formatEther(survivorReward))
-            setBatchProgress({
-                currentBatch: 0,
-                totalBatches,
-                processedTokens: 0,
-                totalTokens: mintedNumber,
-            })
-
-            if (mintedNumber === 0) {
-                setAllPepurges([])
-                return
-            }
-
-            setShowBatchLoadingModal(true)
-            const battlefield: PepurgeNFT[] = []
-            let cursor = 1n
-            let batch = 0
-            do {
-                const [rows, nextCursor] = await contract.getPepurgesPage(
-                    cursor,
-                    PAGE_SIZE,
+            await withReadProvider(walletProvider, async (provider) => {
+                const contract = new ethers.Contract(
+                    pepurgeContractAddress,
+                    pepurgeAbi,
+                    provider,
                 )
-                battlefield.push(...rows.map(toPepurge))
-                batch += 1
+                const [
+                    minted,
+                    size,
+                    cooldown,
+                    alive,
+                    threshold,
+                    activated,
+                    reward,
+                    survivorReward,
+                ] = await Promise.all([
+                    contract.totalMinted(),
+                    contract.collectionSize(),
+                    contract.coolDown(),
+                    contract.aliveCount(),
+                    contract.endGameThreshold(),
+                    contract.gameActivated(),
+                    contract.pendingRewards(address),
+                    contract.winnerReward(),
+                ])
+
+                const mintedNumber = Number(minted)
+                const totalBatches = Math.ceil(mintedNumber / PAGE_SIZE)
+                setTotalMinted(mintedNumber)
+                setCollectionSize(Number(size))
+                setCooldownSeconds(Number(cooldown))
+                setAliveCount(Number(alive))
+                setEndGameThreshold(Number(threshold))
+                setGameActivated(activated)
+                setPendingReward(ethers.formatEther(reward))
+                setWinnerReward(ethers.formatEther(survivorReward))
                 setBatchProgress({
-                    currentBatch: batch,
+                    currentBatch: 0,
                     totalBatches,
-                    processedTokens: Math.min(batch * PAGE_SIZE, mintedNumber),
+                    processedTokens: 0,
                     totalTokens: mintedNumber,
                 })
-                cursor = BigInt(nextCursor)
-            } while (cursor !== 0n)
 
-            setAllPepurges(battlefield)
+                if (mintedNumber === 0) {
+                    setAllPepurges([])
+                    return
+                }
+
+                setShowBatchLoadingModal(true)
+                const battlefield: PepurgeNFT[] = []
+                let cursor = 1n
+                let batch = 0
+                do {
+                    const [rows, nextCursor] = await contract.getPepurgesPage(
+                        cursor,
+                        PAGE_SIZE,
+                    )
+                    battlefield.push(...rows.map(toPepurge))
+                    batch += 1
+                    setBatchProgress({
+                        currentBatch: batch,
+                        totalBatches,
+                        processedTokens: Math.min(batch * PAGE_SIZE, mintedNumber),
+                        totalTokens: mintedNumber,
+                    })
+                    cursor = BigInt(nextCursor)
+                } while (cursor !== 0n)
+
+                setAllPepurges(battlefield)
+            })
         } catch (error) {
             console.error("Failed to load battlefield", error)
         } finally {
@@ -318,138 +318,137 @@ export default function NightmarePage() {
         battleLogRequestInFlight.current = true
         setBattleLogLoading(true)
         try {
-            const provider = new ethers.BrowserProvider(
-                walletProvider as ethers.Eip1193Provider,
-            )
-            const contract = new ethers.Contract(
-                pepurgeContractAddress,
-                pepurgeAbi,
-                provider,
-            )
-            const contractInterface = new ethers.Interface(pepurgeAbi)
-            const attackEvent = contractInterface.getEvent("AttackResult")
-            const hiddenEvent = contractInterface.getEvent("AutoHideReward")
-            const rewardEvent = contractInterface.getEvent("RewardCredited")
-            if (!attackEvent || !hiddenEvent || !rewardEvent) return
-
-            const [network, survivorReward] = await Promise.all([
-                provider.getNetwork(),
-                contract.winnerReward(),
-            ])
-            setWinnerReward(ethers.formatEther(survivorReward))
-            const chainId = network.chainId.toString()
-            if (battleLogChainId.current !== chainId) {
-                battleLogChainId.current = chainId
-                battleLogLastScannedBlock.current = null
-                setBattleLog([])
-            }
-
-            const latestBlock = await provider.getBlockNumber()
-            const previousScannedBlock = battleLogLastScannedBlock.current
-            const isInitialScan = previousScannedBlock === null
-            const minimumBlock = isInitialScan
-                ? Math.max(0, latestBlock - LOG_BLOCK_LOOKBACK)
-                : previousScannedBlock + 1
-            if (minimumBlock > latestBlock) return
-
-            const attackLogs: ethers.Log[] = []
-            const relatedLogs: ethers.Log[] = []
-            let toBlock = latestBlock
-
-            while (
-                toBlock >= minimumBlock &&
-                attackLogs.length < BATTLE_LOG_LIMIT
-            ) {
-                const fromBlock = Math.max(
-                    minimumBlock,
-                    toBlock - LOG_BLOCK_CHUNK + 1,
+            await withReadProvider(walletProvider, async (provider) => {
+                const contract = new ethers.Contract(
+                    pepurgeContractAddress,
+                    pepurgeAbi,
+                    provider,
                 )
-                const chunk = await provider.getLogs({
-                    address: pepurgeContractAddress,
-                    topics: [[
-                        attackEvent.topicHash,
-                        hiddenEvent.topicHash,
-                        rewardEvent.topicHash,
-                    ]],
-                    fromBlock,
-                    toBlock,
-                })
-                relatedLogs.push(...chunk)
-                attackLogs.push(
-                    ...chunk.filter(
-                        (log) => log.topics[0] === attackEvent.topicHash,
-                    ),
-                )
-                toBlock = fromBlock - 1
-            }
-            battleLogLastScannedBlock.current = latestBlock
+                const contractInterface = new ethers.Interface(pepurgeAbi)
+                const attackEvent = contractInterface.getEvent("AttackResult")
+                const hiddenEvent = contractInterface.getEvent("AutoHideReward")
+                const rewardEvent = contractInterface.getEvent("RewardCredited")
+                if (!attackEvent || !hiddenEvent || !rewardEvent) return
 
-            const selectedAttackLogs = attackLogs
-                .sort(
-                    (left, right) =>
-                        right.blockNumber - left.blockNumber ||
-                        right.index - left.index,
-                )
-                .slice(0, BATTLE_LOG_LIMIT)
-            if (selectedAttackLogs.length === 0) {
-                if (isInitialScan) setBattleLog([])
-                return
-            }
-
-            const selectedTransactions = new Set(
-                selectedAttackLogs.map((log) => log.transactionHash),
-            )
-            const hiddenByTransaction = new Map<string, string>()
-            const rewardByTransaction = new Map<string, string>()
-
-            for (const log of relatedLogs) {
-                if (!selectedTransactions.has(log.transactionHash)) continue
-                const parsed = contractInterface.parseLog(log)
-                if (parsed?.name === "AutoHideReward") {
-                    hiddenByTransaction.set(
-                        log.transactionHash,
-                        parsed.args.tokenId.toString(),
-                    )
-                } else if (parsed?.name === "RewardCredited") {
-                    rewardByTransaction.set(
-                        log.transactionHash,
-                        ethers.formatEther(parsed.args.amount),
-                    )
+                const [network, survivorReward] = await Promise.all([
+                    provider.getNetwork(),
+                    contract.winnerReward(),
+                ])
+                setWinnerReward(ethers.formatEther(survivorReward))
+                const chainId = network.chainId.toString()
+                if (battleLogChainId.current !== chainId) {
+                    battleLogChainId.current = chainId
+                    battleLogLastScannedBlock.current = null
+                    setBattleLog([])
                 }
-            }
 
-            const entries = selectedAttackLogs
-                .map((log): BattleLogEntry | null => {
-                    const parsed = contractInterface.parseLog(log)
-                    if (parsed?.name !== "AttackResult") return null
-                    return {
-                        id: `${log.transactionHash}-${log.index}`,
-                        blockNumber: log.blockNumber,
-                        attackerTokenIds: parsed.args.attackerTokenIds.map(
-                            (tokenId: bigint) => tokenId.toString(),
-                        ),
-                        targetTokenId: parsed.args.victimTokenId.toString(),
-                        damage: Number(parsed.args.damage),
-                        victimHPBefore: Number(parsed.args.victimHPBefore),
-                        victimHPAfter: Number(parsed.args.victimHPAfter),
-                        killed: parsed.args.killed,
-                        autoHiddenTokenId: hiddenByTransaction.get(
-                            log.transactionHash,
-                        ),
-                        ethReward: rewardByTransaction.get(log.transactionHash),
-                    }
-                })
-                .filter((entry): entry is BattleLogEntry => entry !== null)
-            setBattleLog((current) => {
-                if (isInitialScan) return entries
-                const seen = new Set<string>()
-                return [...entries, ...current]
-                    .filter((entry) => {
-                        if (seen.has(entry.id)) return false
-                        seen.add(entry.id)
-                        return true
+                const latestBlock = await provider.getBlockNumber()
+                const previousScannedBlock = battleLogLastScannedBlock.current
+                const isInitialScan = previousScannedBlock === null
+                const minimumBlock = isInitialScan
+                    ? Math.max(0, latestBlock - LOG_BLOCK_LOOKBACK)
+                    : previousScannedBlock + 1
+                if (minimumBlock > latestBlock) return
+
+                const attackLogs: ethers.Log[] = []
+                const relatedLogs: ethers.Log[] = []
+                let toBlock = latestBlock
+
+                while (
+                    toBlock >= minimumBlock &&
+                    attackLogs.length < BATTLE_LOG_LIMIT
+                ) {
+                    const fromBlock = Math.max(
+                        minimumBlock,
+                        toBlock - LOG_BLOCK_CHUNK + 1,
+                    )
+                    const chunk = await provider.getLogs({
+                        address: pepurgeContractAddress,
+                        topics: [[
+                            attackEvent.topicHash,
+                            hiddenEvent.topicHash,
+                            rewardEvent.topicHash,
+                        ]],
+                        fromBlock,
+                        toBlock,
                     })
+                    relatedLogs.push(...chunk)
+                    attackLogs.push(
+                        ...chunk.filter(
+                            (log) => log.topics[0] === attackEvent.topicHash,
+                        ),
+                    )
+                    toBlock = fromBlock - 1
+                }
+                battleLogLastScannedBlock.current = latestBlock
+
+                const selectedAttackLogs = attackLogs
+                    .sort(
+                        (left, right) =>
+                            right.blockNumber - left.blockNumber ||
+                            right.index - left.index,
+                    )
                     .slice(0, BATTLE_LOG_LIMIT)
+                if (selectedAttackLogs.length === 0) {
+                    if (isInitialScan) setBattleLog([])
+                    return
+                }
+
+                const selectedTransactions = new Set(
+                    selectedAttackLogs.map((log) => log.transactionHash),
+                )
+                const hiddenByTransaction = new Map<string, string>()
+                const rewardByTransaction = new Map<string, string>()
+
+                for (const log of relatedLogs) {
+                    if (!selectedTransactions.has(log.transactionHash)) continue
+                    const parsed = contractInterface.parseLog(log)
+                    if (parsed?.name === "AutoHideReward") {
+                        hiddenByTransaction.set(
+                            log.transactionHash,
+                            parsed.args.tokenId.toString(),
+                        )
+                    } else if (parsed?.name === "RewardCredited") {
+                        rewardByTransaction.set(
+                            log.transactionHash,
+                            ethers.formatEther(parsed.args.amount),
+                        )
+                    }
+                }
+
+                const entries = selectedAttackLogs
+                    .map((log): BattleLogEntry | null => {
+                        const parsed = contractInterface.parseLog(log)
+                        if (parsed?.name !== "AttackResult") return null
+                        return {
+                            id: `${log.transactionHash}-${log.index}`,
+                            blockNumber: log.blockNumber,
+                            attackerTokenIds: parsed.args.attackerTokenIds.map(
+                                (tokenId: bigint) => tokenId.toString(),
+                            ),
+                            targetTokenId: parsed.args.victimTokenId.toString(),
+                            damage: Number(parsed.args.damage),
+                            victimHPBefore: Number(parsed.args.victimHPBefore),
+                            victimHPAfter: Number(parsed.args.victimHPAfter),
+                            killed: parsed.args.killed,
+                            autoHiddenTokenId: hiddenByTransaction.get(
+                                log.transactionHash,
+                            ),
+                            ethReward: rewardByTransaction.get(log.transactionHash),
+                        }
+                    })
+                    .filter((entry): entry is BattleLogEntry => entry !== null)
+                setBattleLog((current) => {
+                    if (isInitialScan) return entries
+                    const seen = new Set<string>()
+                    return [...entries, ...current]
+                        .filter((entry) => {
+                            if (seen.has(entry.id)) return false
+                            seen.add(entry.id)
+                            return true
+                        })
+                        .slice(0, BATTLE_LOG_LIMIT)
+                })
             })
         } catch (error) {
             console.error("Failed to load battle log", error)
@@ -513,9 +512,7 @@ export default function NightmarePage() {
 
         setIsPerformingAction(true)
         try {
-            const provider = new ethers.BrowserProvider(
-                walletProvider as ethers.Eip1193Provider,
-            )
+            const provider = createWalletProvider(walletProvider)
             const signer = await provider.getSigner()
             const contract = new ethers.Contract(
                 pepurgeContractAddress,
@@ -626,9 +623,7 @@ export default function NightmarePage() {
         if (!walletProvider) return
         setIsPerformingAction(true)
         try {
-            const provider = new ethers.BrowserProvider(
-                walletProvider as ethers.Eip1193Provider,
-            )
+            const provider = createWalletProvider(walletProvider)
             const signer = await provider.getSigner()
             const contract = new ethers.Contract(
                 pepurgeContractAddress,
@@ -662,9 +657,7 @@ export default function NightmarePage() {
         if (!walletProvider) return
         setIsPerformingAction(true)
         try {
-            const provider = new ethers.BrowserProvider(
-                walletProvider as ethers.Eip1193Provider,
-            )
+            const provider = createWalletProvider(walletProvider)
             const signer = await provider.getSigner()
             const contract = new ethers.Contract(
                 pepurgeContractAddress,
